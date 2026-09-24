@@ -1,7 +1,9 @@
 {
   "name": "D House x Café Amazon",
   "short_name": "D House x Café Amazon",
-  "start_url": "/index.html",
+  "id": "./",
+  "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#059669",
