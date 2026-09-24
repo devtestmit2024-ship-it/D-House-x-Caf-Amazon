@@ -23,6 +23,44 @@ function showToast(msg) {
   setTimeout(() => toast.classList.remove('show'), 3000);
 }
 
+let installGuideShown = false;
+function isInstalledPwa() {
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+
+function isIosDevice() {
+  return /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+function showInstallGuide() {
+  if (installGuideShown || isInstalledPwa()) return;
+  const ios = isIosDevice();
+  if (!ios && !window.pwaInstallReady) return;
+  installGuideShown = true;
+  document.body.insertAdjacentHTML('beforeend', `
+    <div id="pwa-install-guide" style="position:fixed; inset:0; z-index:30000; display:grid; place-items:center; padding:20px; background:rgba(20,40,29,.62);">
+      <div style="width:min(100%,360px); padding:22px; border-radius:18px; background:#fffaf4; color:#2c241d; box-shadow:0 20px 45px rgba(0,0,0,.28); text-align:center;">
+        <div style="font-size:36px;">📲</div>
+        <h2 style="margin:6px 0; font-size:1.3rem; color:#194832;">ติดตั้งแอป</h2>
+        <p style="margin:0 0 16px; color:#766b5e; line-height:1.55;">${ios ? 'แตะปุ่ม Share (□↑) ใน Safari แล้วเลือก “Add to Home Screen” เพื่อเพิ่มแอปลงหน้าจอหลัก' : 'ติดตั้ง D House x Café Amazon เพื่อเปิดใช้งานได้สะดวกยิ่งขึ้น'}</p>
+        <div style="display:flex; justify-content:center; gap:10px;">
+          <button id="btn-dismiss-install-guide" type="button" style="padding:10px 14px; border-radius:10px; background:#e8efe4; color:#194832; font-weight:700;">ภายหลัง</button>
+          ${ios ? '' : '<button id="btn-install-pwa" type="button" style="padding:10px 14px; border-radius:10px; background:#256b45; color:#fff; font-weight:700;">ติดตั้งแอป</button>'}
+        </div>
+      </div>
+    </div>`);
+  const guide = document.querySelector('#pwa-install-guide');
+  document.querySelector('#btn-dismiss-install-guide').onclick = () => guide.remove();
+  document.querySelector('#btn-install-pwa')?.addEventListener('click', async () => {
+    const opened = await window.requestPwaInstall?.();
+    if (!opened) showToast('โปรดติดตั้งจากเมนูเบราว์เซอร์');
+    guide.remove();
+  });
+}
+
+window.addEventListener('pwa-install-available', showInstallGuide);
+
 function createToastEl() {
   const el = document.createElement('div');
   el.id = 'toast';
@@ -1056,6 +1094,8 @@ function renderMainUI() {
     if (html5QrCode && html5QrCode.isScanning) stopScanner();
     else startScanner();
   };
+
+  setTimeout(showInstallGuide, 400);
 }
 
 // โหลดหน้าจอหลักเมื่อเริ่มต้น

@@ -57,10 +57,29 @@
   <!-- ไฟล์โค้ดของแอป -->
   <script src="config.js?v=7"></script>
   <script src="api.js?v=8"></script>
-  <script src="app.js?v=13"></script>
+  <script src="app.js?v=14"></script>
 
   <!-- สคริปต์เปิดใช้งาน Service Worker สำหรับ Android PWA -->
   <script>
+    let deferredInstallPrompt = null;
+    window.addEventListener('beforeinstallprompt', (event) => {
+      event.preventDefault();
+      deferredInstallPrompt = event;
+      window.pwaInstallReady = true;
+      window.dispatchEvent(new Event('pwa-install-available'));
+    });
+
+    window.requestPwaInstall = async () => {
+      if (!deferredInstallPrompt || window.matchMedia('(display-mode: standalone)').matches) return false;
+      try {
+        await deferredInstallPrompt.prompt();
+        await deferredInstallPrompt.userChoice;
+        return true;
+      } finally {
+        deferredInstallPrompt = null;
+      }
+    };
+
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js')
