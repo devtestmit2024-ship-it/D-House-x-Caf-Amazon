@@ -25,7 +25,13 @@ function showToast(msg) {
 
 let installGuideShown = false;
 function isInstalledPwa() {
-  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  return Boolean(
+    window.navigator.standalone ||
+    window.matchMedia('(display-mode: standalone)').matches ||
+    window.matchMedia('(display-mode: minimal-ui)').matches ||
+    window.matchMedia('(display-mode: fullscreen)').matches ||
+    document.referrer.startsWith('android-app://')
+  );
 }
 
 function isIosDevice() {
