@@ -287,12 +287,15 @@ async function startScanner() {
   }
 
   const config = {
-    fps: 15,
+    fps: 12,
     aspectRatio: 1,
     qrbox: (viewfinderWidth, viewfinderHeight) => {
-      const size = Math.min(viewfinderWidth, viewfinderHeight, 300);
+      const size = Math.min(viewfinderWidth, viewfinderHeight, 250);
       return { width: size, height: size };
-    }
+    },
+    // กล้องหลังไม่ต้องลองถอดรหัสภาพกลับด้าน จึงตอบสนองเร็วขึ้น
+    disableFlip: true,
+    experimentalFeatures: { useBarCodeDetectorIfSupported: true }
   };
 
   // จำกัดการอ่านให้เป็น QR โดยตรงเมื่อไลบรารีเวอร์ชันที่ใช้รองรับ
@@ -311,8 +314,8 @@ async function startScanner() {
         if (scannerStatus) scannerStatus.textContent = 'อ่าน QR สำเร็จ กำลังค้นหาข้อมูล...';
         await stopScanner();
         
-        const cleanedKey = parseScanResult(decodedText);
-        await processPhoneQuery(cleanedKey);
+        const scanPayload = parseScanPayload(decodedText);
+        await processPhoneQuery(scanPayload.searchKey, scanPayload.productId);
       },
       () => {}
     );
@@ -324,25 +327,34 @@ async function startScanner() {
   }
 }
 
-function parseScanResult(rawText) {
-  if (!rawText) return '';
-  let str = String(rawText).trim();
+function parseScanPayload(rawText) {
+  if (!rawText) return { searchKey: '', productId: null };
+  const str = String(rawText).trim();
+
+  // QR ของ PWA Client เป็น JSON: couponId, productId, address, phone, expiresAt
+  try {
+    const payload = JSON.parse(str);
+    const searchKey = payload.couponId || payload.Coupon_No || payload.phone || payload.Phone_No;
+    if (searchKey) {
+      return { searchKey: String(searchKey).trim(), productId: payload.productId ?? payload.Product_ID ?? null };
+    }
+  } catch (e) {}
 
   try {
     if (str.startsWith('http://') || str.startsWith('https://')) {
       const url = new URL(str);
       const phoneParam = url.searchParams.get('phone') || url.searchParams.get('tel') || url.searchParams.get('code') || url.searchParams.get('key');
-      if (phoneParam) return phoneParam.trim();
+      if (phoneParam) return { searchKey: phoneParam.trim(), productId: null };
     }
   } catch (e) {}
 
   const phoneMatch = str.match(/0\d{8,9}/);
-  if (phoneMatch) return phoneMatch[0];
+  if (phoneMatch) return { searchKey: phoneMatch[0], productId: null };
 
-  const couponMatch = str.match(/CPN-[A-Za-z0-9]+/i);
-  if (couponMatch) return couponMatch[0].toUpperCase();
+  const couponMatch = str.match(/CPN-[A-Za-z0-9-]+/i);
+  if (couponMatch) return { searchKey: couponMatch[0].toUpperCase(), productId: null };
 
-  return str;
+  return { searchKey: str, productId: null };
 }
 
 async function stopScanner() {
@@ -393,11 +405,33 @@ function removePrintLoadingDialog() {
   document.querySelector('#print-loading-dialog')?.remove();
 }
 
-async function processPhoneQuery(phone) {
+function applyScannedProductFallback(data, scannedProductId) {
+  if (data.productId || !scannedProductId) return data;
+
+  const products = {
+    '1': { name: 'แบล็คคอฟฟี (เย็น)', image: 'public/assets/image/black-coffee.webp' },
+    '2': { name: 'เอสเปรสโซ (เย็น)', image: 'public/assets/image/espresso.webp' },
+    '3': { name: 'ชานม (เย็น)', image: 'public/assets/image/tea-with-milk.webp' }
+  };
+  const productId = String(scannedProductId);
+  const product = products[productId];
+
+  return {
+    ...data,
+    productId,
+    productName: product?.name || `สินค้า รหัส ${productId}`,
+    productImage: product?.image || null
+  };
+}
+
+async function processPhoneQuery(phone, scannedProductId = null) {
   showPrintLoadingDialog('กำลังค้นหาข้อมูลสมาชิก...');
 
   try {
-    const data = await window.staffApi.checkCouponInfo(phone);
+    const data = applyScannedProductFallback(
+      await window.staffApi.checkCouponInfo(phone),
+      scannedProductId
+    );
     removePrintLoadingDialog();
     renderClientDetailPage(data);
   } catch (err) {
