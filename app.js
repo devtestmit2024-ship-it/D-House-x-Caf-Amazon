@@ -449,12 +449,14 @@ async function startScanner() {
   const readerEl = document.querySelector('#reader');
   const btn = document.querySelector('#btn-toggle-camera');
   const manageButton = document.querySelector('#btn-manage-member');
+  const testPrintButton = document.querySelector('#btn-test-print');
   const scannerStatus = document.querySelector('#scanner-status');
   if (!readerEl) return;
 
   isProcessingScan = false;
   readerEl.style.display = 'block';
   if (manageButton) manageButton.style.display = 'none';
+  if (testPrintButton) testPrintButton.style.display = 'none';
   if (scannerStatus) scannerStatus.textContent = 'เล็ง QR Code ให้อยู่ในกรอบ กล้องจะอ่านให้อัตโนมัติ';
   if (btn) {
     btn.textContent = '❌ ปิดกล้องสแกน';
@@ -529,6 +531,7 @@ async function stopScanner() {
   const readerEl = document.querySelector('#reader');
   const btn = document.querySelector('#btn-toggle-camera');
   const manageButton = document.querySelector('#btn-manage-member');
+  const testPrintButton = document.querySelector('#btn-test-print');
   const scannerStatus = document.querySelector('#scanner-status');
 
   if (html5QrCode && html5QrCode.isScanning) {
@@ -539,6 +542,7 @@ async function stopScanner() {
 
   if (readerEl) readerEl.style.display = 'none';
   if (manageButton) manageButton.style.display = 'flex';
+  if (testPrintButton) testPrintButton.style.display = 'block';
   if (scannerStatus) scannerStatus.textContent = '';
   if (btn) {
     btn.textContent = '📷 เปิดกล้องสแกน QR Code';
@@ -1201,9 +1205,6 @@ function renderMainUI() {
         <button id="btn-toggle-camera" style="width: 100%; padding: 0.85rem; background: #059669; color: #fff; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 1rem;">
           📷 เปิดกล้องสแกน QR Code
         </button>
-        <button id="btn-test-print" type="button" style="width: 100%; margin-top: 0.65rem; padding: 0.75rem; background: #0284c7; color: #fff; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: .95rem;">
-          🖨️ ทดสอบพิมพ์
-        </button>
       </div>
 
       <button 
@@ -1232,6 +1233,27 @@ function renderMainUI() {
         onmouseout="this.style.transform='scale(1)'"
       >
         👤
+      </button>
+      <button
+        id="btn-test-print"
+        type="button"
+        title="ทดสอบพิมพ์"
+        style="
+          position:fixed;
+          right:20px;
+          bottom:20px;
+          padding:0.72rem 0.95rem;
+          border:0;
+          border-radius:999px;
+          background:#0284c7;
+          color:#fff;
+          font-weight:bold;
+          cursor:pointer;
+          font-size:.9rem;
+          box-shadow:0 4px 10px rgba(0,0,0,.25);
+          z-index:1000;
+        ">
+        🖨️ ทดสอบพิมพ์
       </button>
     </div>
   `;
