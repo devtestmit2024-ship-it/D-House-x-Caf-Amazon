@@ -413,6 +413,46 @@ function applyScannedProductFallback(data, scannedProductId) {
   };
 }
 
+function supportsBluetoothPrinting() {
+  return Boolean(navigator.bluetooth && window.isSecureContext);
+}
+
+function renderAirPrintReceipt(data, billNo) {
+  const printedAt = new Date().toLocaleString('th-TH');
+  app.innerHTML = `
+    <div class="staff-page airprint-page">
+      <div class="staff-page-header">
+        <button class="back" id="btn-close-airprint" type="button" aria-label="กลับ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
+        <h3>ใบเสร็จรับสิทธิ์</h3>
+      </div>
+      <main id="airprint-receipt" class="airprint-receipt">
+        <h1>D House x Café Amazon</h1>
+        <p>ใบเสร็จรับสิทธิ์คูปอง</p>
+        <hr>
+        <p>เลขที่บิล: <strong>${esc(billNo)}</strong></p>
+        <p>วันที่: ${esc(printedAt)}</p>
+        <p>ลูกค้า: ${esc(formatCustomerName(data.name))}</p>
+        <p>เบอร์โทร: ${esc(maskPhoneNumber(data.phone))}</p>
+        <p>บ้านเลขที่: ${esc(data.address)}</p>
+        <hr>
+        <p>รายการ: <strong>${esc(data.productName)}</strong></p>
+        <p>จำนวน: 1 สิทธิ์ (ฟรี)</p>
+        <p>ใช้สิทธิ์: ${data.usedCount + 1} / ${data.allLimit}</p>
+        <hr>
+        <p class="airprint-thanks">ขอบคุณที่ใช้บริการ</p>
+      </main>
+      <div class="airprint-actions">
+        <p>เลือกเครื่องพิมพ์ AirPrint จากเมนูพิมพ์ของ iPhone/iPad</p>
+        <button id="btn-airprint" class="primary" type="button">🖨️ พิมพ์ด้วย AirPrint</button>
+        <button id="btn-finish-airprint" class="secondary" type="button">เสร็จสิ้น</button>
+      </div>
+    </div>`;
+
+  document.querySelector('#btn-close-airprint').onclick = renderMainUI;
+  document.querySelector('#btn-finish-airprint').onclick = renderMainUI;
+  document.querySelector('#btn-airprint').onclick = () => window.print();
+}
+
 async function processPhoneQuery(phone, scannedProductId = null) {
   showPrintLoadingDialog('กำลังค้นหาข้อมูลสมาชิก...');
 
@@ -508,16 +548,24 @@ function renderClientDetailPage(data) {
 
       try {
         const generatedBillNo = await window.staffApi.generateBillNo();
+        const useAirPrint = !supportsBluetoothPrinting();
 
-        updatePrintLoadingMessage('กำลังส่งสั่งพิมพ์ไปยังเครื่องพิมพ์...');
-        await runPrint(data, generatedBillNo);
+        if (!useAirPrint) {
+          updatePrintLoadingMessage('กำลังส่งสั่งพิมพ์ไปยังเครื่องพิมพ์ Bluetooth...');
+          await runPrint(data, generatedBillNo);
+        }
 
         updatePrintLoadingMessage('กำลังบันทึกข้อมูลการใช้สิทธิ์...');
         await window.staffApi.commitRedeemTransaction(data, generatedBillNo);
 
         removePrintLoadingDialog();
-        showToast('🎉 พิมพ์ใบเสร็จและใช้สิทธิ์เรียบร้อยแล้ว!');
-        renderMainUI();
+        if (useAirPrint) {
+          showToast('ยืนยันใช้สิทธิ์แล้ว กรุณาเลือกพิมพ์ด้วย AirPrint');
+          renderAirPrintReceipt(data, generatedBillNo);
+        } else {
+          showToast('🎉 พิมพ์ใบเสร็จและใช้สิทธิ์เรียบร้อยแล้ว!');
+          renderMainUI();
+        }
 
       } catch (err) {
         console.error(err);

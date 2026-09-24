@@ -197,3 +197,37 @@ body {
   color: var(--ink);
   font-size: 1.1rem;
 }
+
+.airprint-receipt {
+  width: min(100%, 360px);
+  margin: 24px auto 0;
+  padding: 24px;
+  background: #fff;
+  color: #111;
+  border-radius: 14px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, .14);
+  font-size: 14px;
+}
+
+.airprint-receipt h1, .airprint-receipt > p:first-of-type, .airprint-thanks {
+  text-align: center;
+}
+
+.airprint-receipt h1 { margin: 0; font-size: 19px; }
+.airprint-receipt hr { border: 0; border-top: 1px dashed #999; margin: 14px 0; }
+.airprint-receipt p { margin: 7px 0; }
+
+.airprint-actions {
+  width: min(100% - 32px, 360px);
+  margin: 18px auto 28px;
+  text-align: center;
+  color: #fff;
+}
+
+.airprint-actions .secondary { background: #fff; }
+
+@media print {
+  body, #app, .staff-page { background: #fff !important; min-height: auto; }
+  .staff-page-header, .airprint-actions { display: none !important; }
+  .airprint-receipt { width: 100%; margin: 0; padding: 0; border: 0; border-radius: 0; box-shadow: none; }
+}
