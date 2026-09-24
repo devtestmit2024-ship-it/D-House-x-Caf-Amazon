@@ -5,6 +5,7 @@ let bluetoothDevice = null;
 let bluetoothCharacteristic = null;
 let currentHouseDataList = [];
 let adminSession = null;
+let isProcessingScan = false;
 
 const esc = val => String(val ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;' }[c]));
 
@@ -269,10 +270,13 @@ async function startScanner() {
   const readerEl = document.querySelector('#reader');
   const btn = document.querySelector('#btn-toggle-camera');
   const manageButton = document.querySelector('#btn-manage-member');
+  const scannerStatus = document.querySelector('#scanner-status');
   if (!readerEl) return;
 
+  isProcessingScan = false;
   readerEl.style.display = 'block';
   if (manageButton) manageButton.style.display = 'none';
+  if (scannerStatus) scannerStatus.textContent = 'เล็ง QR Code ให้อยู่ในกรอบ กล้องจะอ่านให้อัตโนมัติ';
   if (btn) {
     btn.textContent = '❌ ปิดกล้องสแกน';
     btn.style.background = '#dc2626';
@@ -282,14 +286,29 @@ async function startScanner() {
     html5QrCode = new Html5Qrcode('reader');
   }
 
-  const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+  const config = {
+    fps: 15,
+    aspectRatio: 1,
+    qrbox: (viewfinderWidth, viewfinderHeight) => {
+      const size = Math.min(viewfinderWidth, viewfinderHeight, 300);
+      return { width: size, height: size };
+    }
+  };
+
+  // จำกัดการอ่านให้เป็น QR โดยตรงเมื่อไลบรารีเวอร์ชันที่ใช้รองรับ
+  if (window.Html5QrcodeSupportedFormats?.QR_CODE) {
+    config.formatsToSupport = [window.Html5QrcodeSupportedFormats.QR_CODE];
+  }
 
   try {
     await html5QrCode.start(
       { facingMode: 'environment' },
       config,
       async (decodedText) => {
+        if (isProcessingScan) return;
+        isProcessingScan = true;
         showToast('สแกนสำเร็จ!');
+        if (scannerStatus) scannerStatus.textContent = 'อ่าน QR สำเร็จ กำลังค้นหาข้อมูล...';
         await stopScanner();
         
         const cleanedKey = parseScanResult(decodedText);
@@ -300,6 +319,7 @@ async function startScanner() {
   } catch (err) {
     console.error('Camera Error:', err);
     showToast('ไม่สามารถเปิดกล้องได้: ' + err.message);
+    if (scannerStatus) scannerStatus.textContent = 'ไม่สามารถเปิดกล้องได้';
     stopScanner();
   }
 }
@@ -329,6 +349,7 @@ async function stopScanner() {
   const readerEl = document.querySelector('#reader');
   const btn = document.querySelector('#btn-toggle-camera');
   const manageButton = document.querySelector('#btn-manage-member');
+  const scannerStatus = document.querySelector('#scanner-status');
 
   if (html5QrCode && html5QrCode.isScanning) {
     try {
@@ -338,6 +359,7 @@ async function stopScanner() {
 
   if (readerEl) readerEl.style.display = 'none';
   if (manageButton) manageButton.style.display = 'flex';
+  if (scannerStatus) scannerStatus.textContent = '';
   if (btn) {
     btn.textContent = '📷 เปิดกล้องสแกน QR Code';
     btn.style.background = '#059669';
@@ -921,6 +943,7 @@ function renderMainUI() {
 
       <div class="card" style="border: 1px solid #ddd; border-radius: 12px; padding: 1rem; background: #fff; margin-bottom: 1rem; text-align: center;">
         <div id="reader" style="width:100%; max-width:100%; box-sizing:border-box; border-radius:8px; overflow:hidden; background:#000; display:none; margin-bottom:0.75rem;"></div>
+        <p id="scanner-status" aria-live="polite" style="margin:0 0 .75rem; color:#766b5e; font-size:.85rem;"></p>
         <button id="btn-toggle-camera" style="width: 100%; padding: 0.85rem; background: #059669; color: #fff; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 1rem;">
           📷 เปิดกล้องสแกน QR Code
         </button>
