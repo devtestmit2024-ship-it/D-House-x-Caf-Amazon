@@ -216,6 +216,10 @@ body {
 .airprint-receipt h1 { margin: 0; font-size: 19px; }
 .airprint-receipt hr { border: 0; border-top: 1px dashed #999; margin: 14px 0; }
 .airprint-receipt p { margin: 7px 0; }
+.airprint-receipt .airprint-date { text-align: center; font-size: 12px; }
+.airprint-receipt .airprint-row { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
+.airprint-receipt .airprint-row span:last-child { text-align: right; }
+.airprint-receipt .airprint-product { font-weight: 700; font-size: 16px; }
 
 .airprint-actions {
   width: min(100% - 32px, 360px);
@@ -229,5 +233,7 @@ body {
 @media print {
   body, #app, .staff-page { background: #fff !important; min-height: auto; }
   .staff-page-header, .airprint-actions { display: none !important; }
-  .airprint-receipt { width: 100%; margin: 0; padding: 0; border: 0; border-radius: 0; box-shadow: none; }
+  .airprint-receipt { width: 58mm; margin: 0 auto; padding: 0; border: 0; border-radius: 0; box-shadow: none; font-size: 11px; }
+  .airprint-receipt h1 { font-size: 15px; }
+  .airprint-receipt .airprint-product { font-size: 13px; }
 }

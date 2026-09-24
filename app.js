@@ -71,6 +71,24 @@ function showInstallGuide() {
 
 window.addEventListener('pwa-install-available', showInstallGuide);
 
+function showInstalledPwaNotice() {
+  document.querySelector('#pwa-install-guide')?.remove();
+  localStorage.setItem(INSTALL_GUIDE_DISMISSED_KEY, '1');
+  document.querySelector('#pwa-installed-notice')?.remove();
+  document.body.insertAdjacentHTML('beforeend', `
+    <div id="pwa-installed-notice" style="position:fixed; inset:0; z-index:30001; display:grid; place-items:center; padding:20px; background:rgba(20,40,29,.62);">
+      <section role="dialog" aria-modal="true" style="width:min(100%,360px); padding:22px; border-radius:18px; background:#fffaf4; color:#2c241d; box-shadow:0 20px 45px rgba(0,0,0,.28); text-align:center;">
+        <div style="font-size:36px;">✅</div>
+        <h2 style="margin:6px 0; font-size:1.3rem; color:#194832;">ติดตั้งแอปแล้ว</h2>
+        <p style="margin:0 0 16px; color:#766b5e; line-height:1.55;">กรุณาปิดหน้าเว็บนี้ แล้วเปิดแอปจากไอคอนที่เพิ่งติดตั้งบนหน้าจอหลัก</p>
+        <button id="btn-close-installed-notice" type="button" style="padding:10px 14px; border:0; border-radius:10px; background:#256b45; color:#fff; font-weight:700;">รับทราบ</button>
+      </section>
+    </div>`);
+  document.querySelector('#btn-close-installed-notice').onclick = () => document.querySelector('#pwa-installed-notice')?.remove();
+}
+
+window.addEventListener('pwa-installed', showInstalledPwaNotice);
+
 function createToastEl() {
   const el = document.createElement('div');
   el.id = 'toast';
@@ -80,6 +98,7 @@ function createToastEl() {
 
 // ===== ระบบเครื่องพิมพ์ Bluetooth (BLE) =====
 const PRINT_WIDTH_DOTS = 384;
+const PRINTER_SETTINGS_KEY = 'staff-selected-bluetooth-printer';
 const PRINTER_SERVICES = [
   '000018f0-0000-1000-8000-00805f9b34fb',
   '0000ff00-0000-1000-8000-00805f9b34fb',
@@ -92,6 +111,41 @@ const PRINTER_SERVICES = [
 ];
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function getSavedPrinter() {
+  try {
+    const value = JSON.parse(localStorage.getItem(PRINTER_SETTINGS_KEY) || 'null');
+    return value?.id ? value : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function savePrinter(device) {
+  localStorage.setItem(PRINTER_SETTINGS_KEY, JSON.stringify({
+    id: device.id,
+    name: device.name || 'Bluetooth Printer'
+  }));
+}
+
+function clearSavedPrinter() {
+  localStorage.removeItem(PRINTER_SETTINGS_KEY);
+  forgetPrinter();
+}
+
+async function getConfiguredPrinterDevice() {
+  const saved = getSavedPrinter();
+  if (!saved) throw new Error('ยังไม่ได้ตั้งค่าเครื่องพิมพ์ กรุณาตั้งค่าจากหน้าจัดการสมาชิก');
+  if (!navigator.bluetooth?.getDevices) {
+    throw new Error('เบราว์เซอร์นี้ไม่สามารถตรวจสอบเครื่องพิมพ์ที่ตั้งค่าไว้ได้');
+  }
+  const devices = await navigator.bluetooth.getDevices();
+  const device = devices.find(item => item.id === saved.id);
+  if (!device) {
+    throw new Error(`ไม่พบเครื่องพิมพ์ที่ตั้งไว้ (${saved.name}) กรุณาตั้งค่าเครื่องพิมพ์ใหม่`);
+  }
+  return device;
+}
 
 function forgetPrinter() {
   try { bluetoothDevice?.gatt?.disconnect(); } catch (e) {}
@@ -108,20 +162,9 @@ async function connectBluetoothPrinter() {
     return bluetoothCharacteristic;
   }
 
-  if (!bluetoothDevice && navigator.bluetooth.getDevices) {
-    const pairedDevices = await navigator.bluetooth.getDevices();
-    if (pairedDevices.length > 0) {
-      bluetoothDevice = pairedDevices[0];
-      showToast(`กำลังเชื่อมต่อเครื่องพิมพ์เดิม: ${bluetoothDevice.name || 'Bluetooth Printer'}`);
-    }
-  }
-
   if (!bluetoothDevice) {
-    showToast('ไม่พบเครื่องพิมพ์ที่เคยจับคู่ไว้ กรุณาเลือกเครื่องพิมพ์...');
-    bluetoothDevice = await navigator.bluetooth.requestDevice({
-      acceptAllDevices: true,
-      optionalServices: PRINTER_SERVICES
-    });
+    bluetoothDevice = await getConfiguredPrinterDevice();
+    showToast(`กำลังตรวจสอบเครื่องพิมพ์: ${bluetoothDevice.name || 'Bluetooth Printer'}`);
   }
 
   bluetoothDevice.addEventListener('gattserverdisconnected', () => {
@@ -147,6 +190,65 @@ async function connectBluetoothPrinter() {
     forgetPrinter();
     throw err;
   }
+}
+
+async function configureBluetoothPrinter() {
+  if (!navigator.bluetooth) throw new Error('เบราว์เซอร์นี้ไม่รองรับ Web Bluetooth');
+  if (!window.isSecureContext) throw new Error('Web Bluetooth ต้องเปิดผ่าน HTTPS เท่านั้น');
+
+  forgetPrinter();
+  const device = await navigator.bluetooth.requestDevice({
+    acceptAllDevices: true,
+    optionalServices: PRINTER_SERVICES
+  });
+  bluetoothDevice = device;
+  try {
+    await connectBluetoothPrinter();
+    savePrinter(device);
+    showToast(`ตั้งค่าเครื่องพิมพ์ ${device.name || 'Bluetooth Printer'} เรียบร้อยแล้ว`);
+  } catch (error) {
+    forgetPrinter();
+    throw new Error(`เชื่อมต่อเครื่องพิมพ์ไม่ได้: ${error.message}`);
+  }
+}
+
+function openPrinterSettings() {
+  const saved = getSavedPrinter();
+  document.querySelector('#printer-settings-dialog')?.remove();
+  document.body.insertAdjacentHTML('beforeend', `
+    <div id="printer-settings-dialog" style="position:fixed; inset:0; z-index:20000; display:grid; place-items:center; padding:20px; background:rgba(15,23,42,.55);">
+      <section role="dialog" aria-modal="true" aria-labelledby="printer-settings-title" style="width:min(100%,420px); padding:22px; border-radius:16px; background:#fff; color:#1e293b; box-shadow:0 18px 42px rgba(0,0,0,.25);">
+        <h2 id="printer-settings-title" style="margin:0 0 10px; font-size:1.2rem; color:#0284c7;">🖨️ ตั้งค่าเครื่องพิมพ์</h2>
+        <p style="margin:0 0 18px; line-height:1.55; color:#475569;">${saved ? `เครื่องที่เลือก: <strong>${esc(saved.name)}</strong>` : 'ยังไม่ได้เลือกเครื่องพิมพ์'}<br><small>ระบบจะตรวจสอบการเชื่อมต่อของเครื่องนี้ก่อนพิมพ์ทุกครั้ง</small></p>
+        <div id="printer-settings-error" role="alert" style="display:none; margin:0 0 12px; color:#b91c1c;"></div>
+        <div style="display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap;">
+          ${saved ? '<button id="btn-clear-printer" type="button" style="padding:9px 12px; border:1px solid #fecaca; border-radius:8px; background:#fff; color:#b91c1c; font-weight:700;">ล้างการตั้งค่า</button>' : ''}
+          <button id="btn-close-printer-settings" type="button" style="padding:9px 12px; border:0; border-radius:8px; background:#e2e8f0; color:#334155; font-weight:700;">ปิด</button>
+          <button id="btn-select-printer" type="button" style="padding:9px 12px; border:0; border-radius:8px; background:#0284c7; color:#fff; font-weight:700;">${saved ? 'เปลี่ยนเครื่องพิมพ์' : 'เลือกเครื่องพิมพ์'}</button>
+        </div>
+      </section>
+    </div>`);
+  const dialog = document.querySelector('#printer-settings-dialog');
+  const errorEl = document.querySelector('#printer-settings-error');
+  document.querySelector('#btn-close-printer-settings').onclick = () => dialog.remove();
+  document.querySelector('#btn-clear-printer')?.addEventListener('click', () => {
+    clearSavedPrinter();
+    dialog.remove();
+    showToast('ล้างการตั้งค่าเครื่องพิมพ์แล้ว');
+  });
+  document.querySelector('#btn-select-printer').onclick = async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    errorEl.style.display = 'none';
+    try {
+      await configureBluetoothPrinter();
+      dialog.remove();
+    } catch (error) {
+      errorEl.textContent = error.message;
+      errorEl.style.display = 'block';
+      button.disabled = false;
+    }
+  };
 }
 
 function makeWriter(ch) {
@@ -313,6 +415,35 @@ async function runPrint(data, billNo) {
   await printReceiptESC_POS(characteristic, receipts.copy);
 }
 
+async function printTestReceipt() {
+  if (!getSavedPrinter()) {
+    showToast('ยังไม่ได้ตั้งค่าเครื่องพิมพ์ กรุณาให้แอดมินตั้งค่าก่อน');
+    return;
+  }
+
+  showPrintLoadingDialog('กำลังตรวจสอบและส่งใบเสร็จทดสอบ...');
+  try {
+    const characteristic = await connectBluetoothPrinter();
+    const testData = {
+      name: 'ทดสอบระบบ',
+      phone: '-',
+      address: 'TEST',
+      project: '-',
+      productName: 'ใบเสร็จทดสอบเครื่องพิมพ์',
+      usedCount: 0,
+      allLimit: 1
+    };
+    const receipt = createReceiptLines(testData, `TEST-${Date.now().toString().slice(-6)}`);
+    await printReceiptESC_POS(characteristic, receipt.original);
+    showToast('พิมพ์ใบเสร็จทดสอบเรียบร้อยแล้ว');
+  } catch (error) {
+    console.error('Test print failed:', error);
+    showToast(`พิมพ์ทดสอบไม่ได้: ${error.message}`);
+  } finally {
+    removePrintLoadingDialog();
+  }
+}
+
 // ===== ระบบสแกนกล้อง QR Code =====
 async function startScanner() {
   const readerEl = document.querySelector('#reader');
@@ -467,6 +598,8 @@ function supportsBluetoothPrinting() {
 
 function renderAirPrintReceipt(data, billNo) {
   const printedAt = new Date().toLocaleString('th-TH');
+  const remainingBenefits = Math.max(0, data.allLimit - (data.usedCount + 1));
+  const project = data.project && data.project !== '-' ? ` ${data.project}` : '';
   app.innerHTML = `
     <div class="staff-page airprint-page">
       <div class="staff-page-header">
@@ -477,15 +610,14 @@ function renderAirPrintReceipt(data, billNo) {
         <h1>D House x Café Amazon</h1>
         <p>ใบเสร็จรับสิทธิ์คูปอง</p>
         <hr>
-        <p>เลขที่บิล: <strong>${esc(billNo)}</strong></p>
-        <p>วันที่: ${esc(printedAt)}</p>
-        <p>ลูกค้า: ${esc(formatCustomerName(data.name))}</p>
-        <p>เบอร์โทร: ${esc(maskPhoneNumber(data.phone))}</p>
-        <p>บ้านเลขที่: ${esc(data.address)}</p>
+        <p class="airprint-date">${esc(printedAt)}</p>
+        <p class="airprint-row"><span>เลขที่บิล: ${esc(billNo)}</span><span>${esc(data.address)}${esc(project)}</span></p>
+        <p class="airprint-row"><span>${esc(formatCustomerName(data.name))}</span><span>${esc(maskPhoneNumber(data.phone))}</span></p>
         <hr>
-        <p>รายการ: <strong>${esc(data.productName)}</strong></p>
-        <p>จำนวน: 1 สิทธิ์ (ฟรี)</p>
-        <p>ใช้สิทธิ์: ${data.usedCount + 1} / ${data.allLimit}</p>
+        <p>จำนวน: 1 สิทธิ์ (ใช้สิทธิ์ฟรี)</p>
+        <p class="airprint-product">${esc(data.productName)}</p>
+        <p>ใช้ไปแล้ว: ${data.usedCount + 1} สิทธิ์</p>
+        <p>คงเหลือ: ${remainingBenefits} สิทธิ์</p>
         <hr>
         <p class="airprint-thanks">ขอบคุณที่ใช้บริการ</p>
       </main>
@@ -696,11 +828,12 @@ async function openHouseManagementModal() {
           
           <div style="padding:0.85rem 1rem; background:#f8fafc; border-bottom:1px solid #e2e8f0; display:flex; gap:0.5rem; flex-wrap:wrap; justify-content:space-between; align-items:center;">
             <div style="display:flex; gap:0.5rem; flex:1; min-width:240px;">
-              <input type="text" id="house-search-input" placeholder="ค้นหา ชื่อ, เบอร์โทร, หรือ โครงการ..." style="flex:1; padding:0.6rem; border:1px solid #cbd5e1; border-radius:6px; font-size:0.9rem;" />
+              <input type="text" id="house-search-input" style="flex:1; padding:0.6rem; border:1px solid #cbd5e1; border-radius:6px; font-size:0.9rem;" />
               <button id="btn-house-search" style="padding:0.6rem 1rem; background:#0284c7; color:#fff; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:0.9rem;">🔍 ค้นหา</button>
             </div>
             <div style="display:flex; gap:0.5rem;">
               <button id="btn-house-refresh" style="padding:0.6rem 1rem; background:#475569; color:#fff; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:0.9rem;">🔄 รีเฟรช</button>
+              <button id="btn-printer-settings" style="padding:0.6rem 1rem; background:#0284c7; color:#fff; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:0.9rem;">🖨️ ตั้งค่าเครื่องพิมพ์</button>
               <button id="btn-open-add-house" style="padding:0.6rem 1rem; background:#059669; color:#fff; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:0.9rem;">➕ เพิ่มข้อมูลใหม่</button>
             </div>
           </div>
@@ -741,6 +874,8 @@ async function openHouseManagementModal() {
     await loadHouseTableData();
     showToast('อัปเดตข้อมูลตารางเรียบร้อยแล้ว');
   };
+
+  document.querySelector('#btn-printer-settings').onclick = openPrinterSettings;
 
   document.querySelector('#btn-house-search').onclick = filterHouseTable;
   document.querySelector('#house-search-input').onkeyup = (e) => {
@@ -798,15 +933,15 @@ function openHouseRecordModal(title, isEdit = false, record = null) {
             <div style="display:flex; gap:0.5rem;">
               <div style="flex:1;">
                 <label style="font-size:0.8rem; font-weight:bold; color:#475569;">สิทธิ์ / วัน</label>
-                <input type="number" id="h-field-quotaPerDay" value="${record?.quotaPerDay ?? 1}" min="1" style="width:100%; padding:0.6rem; border:1px solid #cbd5e1; border-radius:6px; box-sizing:border-box; font-size:0.95rem;" />
+                <input type="number" id="h-field-quotaPerDay" value="${isEdit ? (record?.quotaPerDay ?? '') : ''}" min="1" style="width:100%; padding:0.6rem; border:1px solid #cbd5e1; border-radius:6px; box-sizing:border-box; font-size:0.95rem;" />
               </div>
               <div style="flex:1;">
                 <label style="font-size:0.8rem; font-weight:bold; color:#475569;">สิทธิ์ที่ใช้แล้ว</label>
-                <input type="number" id="h-field-usedCount" value="${record?.usedCount ?? 0}" min="0" style="width:100%; padding:0.6rem; border:1px solid #cbd5e1; border-radius:6px; box-sizing:border-box; font-size:0.95rem;" />
+                <input type="number" id="h-field-usedCount" value="${isEdit ? (record?.usedCount ?? '') : ''}" min="0" style="width:100%; padding:0.6rem; border:1px solid #cbd5e1; border-radius:6px; box-sizing:border-box; font-size:0.95rem;" />
               </div>
               <div style="flex:1;">
                 <label style="font-size:0.8rem; font-weight:bold; color:#475569;">สิทธิ์ทั้งหมด</label>
-                <input type="number" id="h-field-allLimit" value="${record?.allLimit ?? 10}" min="1" style="width:100%; padding:0.6rem; border:1px solid #cbd5e1; border-radius:6px; box-sizing:border-box; font-size:0.95rem;" />
+                <input type="number" id="h-field-allLimit" value="${isEdit ? (record?.allLimit ?? '') : ''}" min="1" style="width:100%; padding:0.6rem; border:1px solid #cbd5e1; border-radius:6px; box-sizing:border-box; font-size:0.95rem;" />
               </div>
             </div>
 
@@ -1066,6 +1201,9 @@ function renderMainUI() {
         <button id="btn-toggle-camera" style="width: 100%; padding: 0.85rem; background: #059669; color: #fff; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 1rem;">
           📷 เปิดกล้องสแกน QR Code
         </button>
+        <button id="btn-test-print" type="button" style="width: 100%; margin-top: 0.65rem; padding: 0.75rem; background: #0284c7; color: #fff; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: .95rem;">
+          🖨️ ทดสอบพิมพ์
+        </button>
       </div>
 
       <button 
@@ -1104,6 +1242,8 @@ function renderMainUI() {
     if (html5QrCode && html5QrCode.isScanning) stopScanner();
     else startScanner();
   };
+
+  document.querySelector('#btn-test-print').onclick = printTestReceipt;
 
   setTimeout(showInstallGuide, 400);
 }
