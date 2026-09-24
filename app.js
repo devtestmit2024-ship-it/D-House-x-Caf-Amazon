@@ -283,25 +283,14 @@ async function startScanner() {
   }
 
   if (!html5QrCode) {
-    html5QrCode = new Html5Qrcode('reader');
+    const scannerOptions = window.Html5QrcodeSupportedFormats?.QR_CODE
+      ? { formatsToSupport: [window.Html5QrcodeSupportedFormats.QR_CODE] }
+      : undefined;
+    html5QrCode = new Html5Qrcode('reader', scannerOptions);
   }
 
-  const config = {
-    fps: 12,
-    aspectRatio: 1,
-    qrbox: (viewfinderWidth, viewfinderHeight) => {
-      const size = Math.min(viewfinderWidth, viewfinderHeight, 250);
-      return { width: size, height: size };
-    },
-    // กล้องหลังไม่ต้องลองถอดรหัสภาพกลับด้าน จึงตอบสนองเร็วขึ้น
-    disableFlip: true,
-    experimentalFeatures: { useBarCodeDetectorIfSupported: true }
-  };
-
-  // จำกัดการอ่านให้เป็น QR โดยตรงเมื่อไลบรารีเวอร์ชันที่ใช้รองรับ
-  if (window.Html5QrcodeSupportedFormats?.QR_CODE) {
-    config.formatsToSupport = [window.Html5QrcodeSupportedFormats.QR_CODE];
-  }
+  // ไม่จำกัดกรอบสแกน เพื่อให้อ่านได้ทันทีแม้ QR ไม่อยู่กึ่งกลางกล้อง
+  const config = { fps: 10, disableFlip: false };
 
   try {
     await html5QrCode.start(
