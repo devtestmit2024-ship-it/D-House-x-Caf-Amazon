@@ -24,6 +24,7 @@ function showToast(msg) {
 }
 
 let installGuideShown = false;
+const INSTALL_GUIDE_DISMISSED_KEY = 'staff-pwa-install-guide-dismissed';
 function isInstalledPwa() {
   return Boolean(
     window.navigator.standalone ||
@@ -40,9 +41,8 @@ function isIosDevice() {
 }
 
 function showInstallGuide() {
-  if (installGuideShown || isInstalledPwa()) return;
+  if (installGuideShown || isInstalledPwa() || localStorage.getItem(INSTALL_GUIDE_DISMISSED_KEY) === '1') return;
   const ios = isIosDevice();
-  if (!ios && !window.pwaInstallReady) return;
   installGuideShown = true;
   document.body.insertAdjacentHTML('beforeend', `
     <div id="pwa-install-guide" style="position:fixed; inset:0; z-index:30000; display:grid; place-items:center; padding:20px; background:rgba(20,40,29,.62);">
@@ -57,10 +57,14 @@ function showInstallGuide() {
       </div>
     </div>`);
   const guide = document.querySelector('#pwa-install-guide');
-  document.querySelector('#btn-dismiss-install-guide').onclick = () => guide.remove();
+  document.querySelector('#btn-dismiss-install-guide').onclick = () => {
+    localStorage.setItem(INSTALL_GUIDE_DISMISSED_KEY, '1');
+    guide.remove();
+  };
   document.querySelector('#btn-install-pwa')?.addEventListener('click', async () => {
     const opened = await window.requestPwaInstall?.();
     if (!opened) showToast('โปรดติดตั้งจากเมนูเบราว์เซอร์');
+    localStorage.setItem(INSTALL_GUIDE_DISMISSED_KEY, '1');
     guide.remove();
   });
 }
