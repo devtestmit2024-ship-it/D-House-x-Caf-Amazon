@@ -24,12 +24,37 @@ function cleanString(val) {
  * แผนที่รายการสินค้า (Product Map)
  */
 const PRODUCT_MAP = {
-  '1': { name: 'แบล๊คคอฟฟี (เย็น)', image: 'public/assets/image/black-coffee.webp' },
+  '1': { name: 'แบล็คคอฟฟี (เย็น)', image: 'public/assets/image/black-coffee.webp' },
   '2': { name: 'เอสเปรสโซ (เย็น)', image: 'public/assets/image/espresso.webp' },
   '3': { name: 'ชานม (เย็น)', image: 'public/assets/image/tea-with-milk.webp' }
 };
 
 window.staffApi = {
+  /**
+   * ตรวจสอบสิทธิ์ก่อนเปิดหน้าจัดการสมาชิก
+   * User ใช้เบอร์โทรศัพท์ที่บันทึกใน Phone_No
+   */
+  async verifyAdminCredentials(username, password) {
+    const supabase = getSupabase();
+    const user = cleanString(username);
+    const pass = String(password ?? '');
+
+    if (!user || !pass) throw new Error('กรุณากรอก User และ Password ให้ครบถ้วน');
+
+    const { data, error } = await supabase
+      .from('Cafe_Amazon_Promosion_House')
+      .select('ID, Name, Phone_No, Access_Level')
+      .eq('Phone_No', user)
+      .eq('PassWord', pass)
+      .eq('Access_Level', 1)
+      .maybeSingle();
+
+    if (error) throw new Error(`ตรวจสอบสิทธิ์ไม่สำเร็จ: ${error.message}`);
+    if (!data) throw new Error('User หรือ Password ไม่ถูกต้อง หรือบัญชีนี้ไม่มีสิทธิ์แอดมิน');
+
+    return { id: data.ID, name: data.Name, username: data.Phone_No, accessLevel: data.Access_Level };
+  },
+
   /**
    * 0. ฟังก์ชันเจนเลขบิลอัตโนมัติ (YYYYMMDD0001)
    * เลขรัน 4 หลัก และรีเซ็ตเป็น 0001 เมื่อเป็นบิลแรกของวัน
@@ -277,8 +302,8 @@ async getHistory(userPhone) {
     const supabase = getSupabase();
     const { data, error } = await supabase
       .from('Cafe_Amazon_Promosion_House')
-      .select('ID, Name, Phone_No, House_Number, Project_ID, All_Use, All_Limit, Day_Limit, IsUse, Confirm_Coupon, Product_ID')
-      .order('ID', { ascending: false });
+      .select('ID, Name, Phone_No, House_Number, Project_ID, All_Use, All_Limit, Day_Limit, IsUse, Access_Level, Confirm_Coupon, Product_ID')
+      .order('Name', { ascending: true });
 
     if (error) throw new Error(`ดึงข้อมูลตารางล้มเหลว: ${error.message}`);
 
@@ -291,7 +316,8 @@ async getHistory(userPhone) {
       usedCount: item.All_Use ?? 0,
       allLimit: item.All_Limit ?? 10,
       quotaPerDay: item.Day_Limit ?? 1, // อ่านค่า Day_Limit จากเบส
-      isUse: item.IsUse ?? true
+      isUse: item.IsUse ?? false,
+      accessLevel: item.Access_Level ?? 0
     }));
   },
 
@@ -315,7 +341,8 @@ async getHistory(userPhone) {
       House_Number: cleanString(payload.address),
       Project_ID: cleanString(payload.project),
       Day_Limit: dayLimitValue,  // ✅ บันทึกตรงตามค่าที่กรอก (หรือ quotaPerDay)
-      IsUse: true,               // ✅ กำหนดให้ IsUse เป็น true
+      Access_Level: Number(payload.accessLevel) === 1 ? 1 : 0,
+      IsUse: payload.id ? Boolean(payload.isUse) : false,
       All_Use: payload.usedCount ?? 0,
       All_Limit: payload.allLimit ?? 10,
       UpdateDate: new Date().toISOString()

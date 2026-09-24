@@ -111,3 +111,89 @@ body.dark-mode .secondary {
   background-color: #333333;
   color: #ffffff;
 }
+
+/* ธีมเดียวกับ PWA Amazon Client และหน้าจอแบบเปลี่ยนทั้งหน้า */
+:root {
+  --green: #256b45;
+  --deep: #194832;
+  --mint: #e8efe4;
+  --ink: #2c241d;
+  --muted: #766b5e;
+  --line: #e2d8cb;
+  --gold: #d6a64d;
+}
+
+body {
+  background: linear-gradient(135deg, rgb(67, 97, 82), rgb(120, 150, 135));
+  color: var(--ink);
+  min-height: 100dvh;
+}
+
+#app {
+  min-height: 100dvh;
+  background: rgba(67, 97, 82, .92);
+}
+
+.shell {
+  min-height: 100dvh;
+}
+
+.logout {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 13px;
+  border: 1px solid #9e3027;
+  border-radius: 999px;
+  background: #b63f35;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 5px 12px #8e3e3040;
+}
+
+.logout:hover { background: #913027; color: #fff; }
+
+.back {
+  width: 42px;
+  height: 42px;
+  border: 1px solid #e8f2ea;
+  border-radius: 50%;
+  background: #edf6ef;
+  color: var(--deep);
+  box-shadow: 0 5px 14px #163d2a38;
+}
+
+.back svg {
+  width: 21px;
+  height: 21px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.staff-page {
+  min-height: 100dvh;
+  background: rgba(67, 97, 82, .92);
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.staff-page-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: calc(14px + env(safe-area-inset-top, 0px)) 16px 14px;
+  background: #fffaf4;
+  border-bottom: 1px solid var(--line);
+}
+
+.staff-page-header h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1.1rem;
+}

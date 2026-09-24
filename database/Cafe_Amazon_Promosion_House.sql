@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS `Cafe_Amazon_Promosion_House` (
   `Confirm_Coupon` TINYINT(1) NOT NULL DEFAULT 0,
   `Coupon_No` VARCHAR(50) NULL DEFAULT NULL,
   `Product_ID` VARCHAR(13) NULL DEFAULT NULL,
+  `Access_Level` INT NOT NULL DEFAULT 0,
   PRIMARY KEY (`ID`),
   UNIQUE KEY `UX_CafeAmazonHouse_Phone` (`Phone_No`),
   INDEX `IX_CafeAmazonHouse_HouseNumber` (`House_Number`)
@@ -63,7 +64,8 @@ CREATE TABLE "Cafe_Amazon_Promosion_House" (
     "PassWord" VARCHAR(255) DEFAULT NULL,
     "Confirm_Coupon" BOOLEAN NOT NULL DEFAULT FALSE,
     "Coupon_No" VARCHAR(50) DEFAULT NULL,
-    "Product_ID" VARCHAR(13) DEFAULT NULL
+    "Product_ID" VARCHAR(13) DEFAULT NULL,
+    "Access_Level" INT DEFAULT 0
 );
 
 -- 3. สร้างตารางประวัติการใช้สิทธิ์/ใบเสร็จ: Cafe_Amazon_Bill
@@ -78,9 +80,7 @@ CREATE TABLE "Cafe_Amazon_Bill" (
     "Change" NUMERIC(10,2) DEFAULT 0.00,
     "InsertDate" TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     "IsUse" BOOLEAN DEFAULT TRUE,
-    `Project_ID` VARCHAR(13) NULL DEFAULT NULL,
-    "Coupon_No" VARCHAR(50) DEFAULT NULL,
-    "Product_ID" VARCHAR(13) DEFAULT NULL
+    "Coupon_No" VARCHAR(50) DEFAULT NULL
 );
 
 -- 4. สร้าง Index เพื่อเพิ่มความเร็วในการค้นหาผ่าน Phone_No, Coupon_No และ Foreign Key
@@ -88,9 +88,6 @@ CREATE INDEX "idx_house_phone" ON "Cafe_Amazon_Promosion_House" ("Phone_No");
 CREATE INDEX "idx_house_coupon" ON "Cafe_Amazon_Promosion_House" ("Coupon_No");
 CREATE INDEX "idx_bill_pk" ON "Cafe_Amazon_Bill" ("Cafe_Amazon_PK");
 
--- 5. ปิด Row Level Security (RLS) เพื่อการทดสอบสิทธิ์อ่าน/เขียน
-ALTER TABLE "Cafe_Amazon_Promosion_House" DISABLE ROW LEVEL SECURITY;
-ALTER TABLE "Cafe_Amazon_Bill" DISABLE ROW LEVEL SECURITY;
 */
 
 -------------------------------------------------------------

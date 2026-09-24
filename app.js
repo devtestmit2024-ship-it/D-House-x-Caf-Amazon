@@ -4,6 +4,7 @@ let html5QrCode = null;
 let bluetoothDevice = null;
 let bluetoothCharacteristic = null;
 let currentHouseDataList = [];
+let adminSession = null;
 
 const esc = val => String(val ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;' }[c]));
 
@@ -267,9 +268,11 @@ async function runPrint(data, billNo) {
 async function startScanner() {
   const readerEl = document.querySelector('#reader');
   const btn = document.querySelector('#btn-toggle-camera');
+  const manageButton = document.querySelector('#btn-manage-member');
   if (!readerEl) return;
 
   readerEl.style.display = 'block';
+  if (manageButton) manageButton.style.display = 'none';
   if (btn) {
     btn.textContent = '❌ ปิดกล้องสแกน';
     btn.style.background = '#dc2626';
@@ -325,6 +328,7 @@ function parseScanResult(rawText) {
 async function stopScanner() {
   const readerEl = document.querySelector('#reader');
   const btn = document.querySelector('#btn-toggle-camera');
+  const manageButton = document.querySelector('#btn-manage-member');
 
   if (html5QrCode && html5QrCode.isScanning) {
     try {
@@ -333,6 +337,7 @@ async function stopScanner() {
   }
 
   if (readerEl) readerEl.style.display = 'none';
+  if (manageButton) manageButton.style.display = 'flex';
   if (btn) {
     btn.textContent = '📷 เปิดกล้องสแกน QR Code';
     btn.style.background = '#059669';
@@ -394,13 +399,11 @@ function renderClientDetailPage(data) {
   const imgUrl = data.productImage || data.imageUrl || data.product_image || '';
 
   const modalHtml = `
-    <div id="client-detail-modal" style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:#f8fafc; z-index:9999; display:flex; flex-direction:column; overflow-y:auto; font-family:sans-serif;">
+    <div id="client-detail-modal" class="staff-page">
       
-      <div style="padding:1rem; background:#fff; border-bottom:1px solid #e2e8f0; display:flex; align-items:center; gap:0.5rem; sticky:top; top:0; z-index:10;">
-        <button id="btn-close-detail" style="padding:0.6rem 1rem; background:#64748b; color:#fff; border:none; border-radius:8px; font-weight:bold; cursor:pointer; font-size:0.95rem;">
-          ← กลับ
-        </button>
-        <h3 style="margin:0; font-size:1.1rem; color:#1e293b;">ข้อมูลสมาชิก</h3>
+      <div class="staff-page-header">
+        <button class="back" id="btn-close-detail" type="button" aria-label="กลับ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
+        <h3>ข้อมูลสมาชิก</h3>
       </div>
 
       <div style="max-width:500px; width:100%; margin:0 auto; padding:1.25rem; box-sizing:border-box;">
@@ -447,13 +450,11 @@ function renderClientDetailPage(data) {
     </div>
   `;
 
-  document.body.insertAdjacentHTML('beforeend', modalHtml);
-
-  const detailModal = document.querySelector('#client-detail-modal');
-  document.querySelector('#btn-close-detail').onclick = () => detailModal.remove();
+  app.innerHTML = modalHtml;
+  document.querySelector('#btn-close-detail').onclick = renderMainUI;
 
   document.querySelector('#btn-open-history').onclick = () => {
-    openHistoryModal(data.phone);
+    openHistoryModal(data.phone, data);
   };
 
   if (hasCouponOrProduct) {
@@ -471,7 +472,7 @@ function renderClientDetailPage(data) {
 
         removePrintLoadingDialog();
         showToast('🎉 พิมพ์ใบเสร็จและใช้สิทธิ์เรียบร้อยแล้ว!');
-        detailModal.remove();
+        renderMainUI();
 
       } catch (err) {
         console.error(err);
@@ -483,14 +484,12 @@ function renderClientDetailPage(data) {
 }
 
 // ===== หน้าประวัติการใช้สิทธิ์ (ขยายแสดงผลแบบ Full Screen) =====
-async function openHistoryModal(phone) {
+async function openHistoryModal(phone, clientData) {
   const modalHtml = `
-    <div id="history-modal" style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:#f8fafc; z-index:10000; display:flex; flex-direction:column; font-family:sans-serif;">
+    <div id="history-modal" class="staff-page">
       
       <div style="padding:1rem; background:#fff; border-bottom:1px solid #e2e8f0; display:flex; align-items:center; gap:0.5rem;">
-        <button id="btn-close-history" style="padding:0.6rem 1rem; background:#64748b; color:#fff; border:none; border-radius:8px; font-weight:bold; cursor:pointer; font-size:0.95rem;">
-          ← กลับ
-        </button>
+        <button class="back" id="btn-close-history" type="button" aria-label="กลับ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
         <h3 style="margin:0; font-size:1.1rem; color:#1e293b;">ประวัติการใช้สิทธิ์</h3>
       </div>
 
@@ -506,10 +505,8 @@ async function openHistoryModal(phone) {
     </div>
   `;
 
-  document.body.insertAdjacentHTML('beforeend', modalHtml);
-
-  const historyModal = document.querySelector('#history-modal');
-  document.querySelector('#btn-close-history').onclick = () => historyModal.remove();
+  app.innerHTML = modalHtml;
+  document.querySelector('#btn-close-history').onclick = () => renderClientDetailPage(clientData);
 
   try {
     const historyList = await window.staffApi.getHistory(phone);
@@ -540,13 +537,15 @@ async function openHistoryModal(phone) {
 
 // ===== หน้าจัดการตารางสมาชิก House Management (ขยายแสดงผลแบบ Full Screen) =====
 async function openHouseManagementModal() {
+  if (Number(adminSession?.accessLevel) !== 1) {
+    showToast('กรุณายืนยันสิทธิ์แอดมินก่อนจัดการสมาชิก');
+    return;
+  }
   const modalHtml = `
-    <div id="house-modal" style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:#f8fafc; z-index:9999; display:flex; flex-direction:column; font-family:sans-serif;">
+    <div id="house-modal" class="staff-page">
       
       <div style="padding:1rem; background:#fff; border-bottom:1px solid #cbd5e1; display:flex; align-items:center; gap:0.5rem; z-index:10;">
-        <button id="btn-close-house-modal" style="padding:0.6rem 1rem; background:#64748b; color:#fff; border:none; border-radius:8px; font-weight:bold; cursor:pointer; font-size:0.95rem;">
-          ← กลับ
-        </button>
+        <button class="back" id="btn-close-house-modal" type="button" aria-label="กลับ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
         <h3 style="margin:0; font-size:1.1rem; color:#0284c7;">🏠 จัดการตารางข้อมูลสมาชิก</h3>
       </div>
 
@@ -592,10 +591,8 @@ async function openHouseManagementModal() {
     </div>
   `;
 
-  document.body.insertAdjacentHTML('beforeend', modalHtml);
-
-  const houseModal = document.querySelector('#house-modal');
-  document.querySelector('#btn-close-house-modal').onclick = () => houseModal.remove();
+  app.innerHTML = modalHtml;
+  document.querySelector('#btn-close-house-modal').onclick = renderMainUI;
 
   document.querySelector('#btn-house-refresh').onclick = async () => {
     const searchInput = document.querySelector('#house-search-input');
@@ -619,12 +616,10 @@ async function openHouseManagementModal() {
 // ===== หน้าฟอร์ม เพิ่ม / แก้ไข สมาชิก (ขยายแสดงผลแบบ Full Screen) =====
 function openHouseRecordModal(title, isEdit = false, record = null) {
   const modalHtml = `
-    <div id="house-record-modal" style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:#f8fafc; z-index:10000; display:flex; flex-direction:column; font-family:sans-serif;">
+    <div id="house-record-modal" class="staff-page">
       
       <div style="padding:1rem; background:#fff; border-bottom:1px solid #cbd5e1; display:flex; align-items:center; gap:0.5rem;">
-        <button id="btn-close-record-modal" style="padding:0.6rem 1rem; background:#64748b; color:#fff; border:none; border-radius:8px; font-weight:bold; cursor:pointer; font-size:0.95rem;">
-          ← กลับ
-        </button>
+        <button class="back" id="btn-close-record-modal" type="button" aria-label="กลับ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
         <h3 style="margin:0; font-size:1.1rem; color:#059669;">${esc(title)}</h3>
       </div>
 
@@ -650,6 +645,13 @@ function openHouseRecordModal(title, isEdit = false, record = null) {
             <div>
               <label style="font-size:0.85rem; font-weight:bold; color:#475569;">โครงการ</label>
               <input type="text" id="h-field-project" value="${esc(record?.project || '')}" style="width:100%; padding:0.6rem; border:1px solid #cbd5e1; border-radius:6px; box-sizing:border-box; font-size:0.95rem;" />
+            </div>
+            <div>
+              <label style="font-size:0.85rem; font-weight:bold; color:#475569;">สถานะผู้ใช้งาน</label>
+              <select id="h-field-access-level" style="width:100%; padding:0.6rem; border:1px solid #cbd5e1; border-radius:6px; box-sizing:border-box; font-size:0.95rem;">
+                <option value="0" ${Number(record?.accessLevel ?? 0) === 0 ? 'selected' : ''}>ผู้ใช้งานทั่วไป</option>
+                <option value="1" ${Number(record?.accessLevel) === 1 ? 'selected' : ''}>แอดมิน</option>
+              </select>
             </div>
 
             <div style="display:flex; gap:0.5rem;">
@@ -693,10 +695,9 @@ function openHouseRecordModal(title, isEdit = false, record = null) {
     </div>
   `;
 
-  document.body.insertAdjacentHTML('beforeend', modalHtml);
+  app.innerHTML = modalHtml;
 
-  const recordModal = document.querySelector('#house-record-modal');
-  const closeForm = () => recordModal.remove();
+  const closeForm = () => openHouseManagementModal();
 
   document.querySelector('#btn-close-record-modal').onclick = closeForm;
   document.querySelector('#btn-cancel-record-modal').onclick = closeForm;
@@ -721,10 +722,16 @@ function openHouseRecordModal(title, isEdit = false, record = null) {
 
   const houseForm = document.querySelector('#house-record-form');
   houseForm.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      return false;
-    }
+    if (e.key !== 'Enter' || e.target.matches('button, textarea')) return;
+
+    // Enter ใช้เลื่อนไปช่องถัดไปเท่านั้น จึงไม่ส่งฟอร์มและไม่กระตุ้นปุ่มใด ๆ
+    const fields = [...houseForm.querySelectorAll('input:not([type="hidden"]), select, textarea')]
+      .filter(field => !field.disabled && field.offsetParent !== null);
+    const currentIndex = fields.indexOf(e.target);
+
+    if (currentIndex === -1) return;
+    e.preventDefault();
+    fields[currentIndex + 1]?.focus();
   });
 
   houseForm.onsubmit = async (e) => {
@@ -740,7 +747,8 @@ function openHouseRecordModal(title, isEdit = false, record = null) {
       project: document.querySelector('#h-field-project').value,
       quotaPerDay: quotaVal,
       Day_Limit: quotaVal,
-      IsUse: true,
+      accessLevel: parseInt(document.querySelector('#h-field-access-level').value, 10) || 0,
+      isUse: isEdit ? Boolean(record?.isUse) : false,
       usedCount: parseInt(document.querySelector('#h-field-usedCount').value, 10) || 0,
       allLimit: parseInt(document.querySelector('#h-field-allLimit').value, 10) || 10
     };
@@ -755,7 +763,6 @@ function openHouseRecordModal(title, isEdit = false, record = null) {
       }
       showToast('บันทึกข้อมูลเรียบร้อยแล้ว');
       closeForm();
-      await loadHouseTableData();
     } catch (err) {
       alert('เกิดข้อผิดพลาดในการบันทึก: ' + err.message);
     }
@@ -851,6 +858,53 @@ function editHouseRecord(id) {
   openHouseRecordModal('✏️ แก้ไขข้อมูลสมาชิก', true, record);
 }
 
+function openAdminLoginDialog() {
+  const dialogHtml = `
+    <div id="admin-login-dialog" style="position:fixed; inset:0; z-index:20000; display:grid; place-items:center; padding:20px; background:rgba(20,40,29,.62);">
+      <form id="admin-login-form" style="width:min(100%,360px); display:grid; gap:14px; padding:22px; border-radius:18px; background:#fffaf4; box-shadow:0 20px 45px rgba(0,0,0,.28);">
+        <div>
+          <h2 style="margin:0; color:#194832; font-size:1.25rem;">ยืนยันสิทธิ์ผู้ดูแล</h2>
+          <p style="margin:5px 0 0; color:#766b5e; font-size:.9rem;">เข้าสู่ระบบด้วย User และ Password ของแอดมิน</p>
+        </div>
+        <label style="display:grid; gap:6px; color:#2c241d;">User (เบอร์โทรศัพท์)
+          <input id="admin-username" name="username" type="text" inputmode="tel" autocomplete="username" required>
+        </label>
+        <label style="display:grid; gap:6px; color:#2c241d;">Password
+          <input id="admin-password" name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <p id="admin-login-error" role="alert" style="display:none; margin:0; color:#b63f35; font-size:.85rem;"></p>
+        <div style="display:flex; justify-content:flex-end; gap:10px;">
+          <button id="btn-cancel-admin-login" type="button" style="padding:10px 14px; border-radius:10px; background:#e8efe4; color:#194832; font-weight:700;">ยกเลิก</button>
+          <button id="btn-confirm-admin-login" type="submit" style="padding:10px 14px; border-radius:10px; background:#256b45; color:#fff; font-weight:700;">เข้าสู่ระบบ</button>
+        </div>
+      </form>
+    </div>`;
+
+  document.body.insertAdjacentHTML('beforeend', dialogHtml);
+  const dialog = document.querySelector('#admin-login-dialog');
+  document.querySelector('#btn-cancel-admin-login').onclick = () => dialog.remove();
+  document.querySelector('#admin-login-form').onsubmit = async (event) => {
+    event.preventDefault();
+    const submitButton = document.querySelector('#btn-confirm-admin-login');
+    const errorEl = document.querySelector('#admin-login-error');
+    submitButton.disabled = true;
+    submitButton.textContent = 'กำลังตรวจสอบ...';
+    errorEl.style.display = 'none';
+
+    try {
+      const formData = new FormData(event.currentTarget);
+      adminSession = await window.staffApi.verifyAdminCredentials(formData.get('username'), formData.get('password'));
+      dialog.remove();
+      openHouseManagementModal();
+    } catch (error) {
+      errorEl.textContent = error.message;
+      errorEl.style.display = 'block';
+      submitButton.disabled = false;
+      submitButton.textContent = 'เข้าสู่ระบบ';
+    }
+  };
+}
+
 // ===== หน้าหลัก UI =====
 function renderMainUI() {
   app.innerHTML = `
@@ -861,8 +915,8 @@ function renderMainUI() {
           alt="D House X Cafe Amazon Logo" 
           style="width: 80px; height: 80px; object-fit: contain; margin-bottom: 0.5rem; border-radius: 12px;"
         >
-        <h1 style="color: #059669; margin: 0; font-size: 1.5rem;">D House x Café Amazon</h1>
-        <p style="color: #666; margin-top: 0.25rem;">สแกน QR Code เพื่อใช้สิทธิ์และพิมพ์ใบเสร็จ</p>
+        <h1 style="color: #fff; margin: 0; font-size: 1.5rem;">D House x Café Amazon</h1>
+        <p style="color: #f5eee3; margin-top: 0.25rem;">สแกน QR Code เพื่อใช้สิทธิ์และพิมพ์ใบเสร็จ</p>
       </header>
 
       <div class="card" style="border: 1px solid #ddd; border-radius: 12px; padding: 1rem; background: #fff; margin-bottom: 1rem; text-align: center;">
@@ -902,7 +956,7 @@ function renderMainUI() {
     </div>
   `;
 
-  document.querySelector('#btn-manage-member').onclick = () => openHouseManagementModal();
+  document.querySelector('#btn-manage-member').onclick = () => openAdminLoginDialog();
 
   document.querySelector('#btn-toggle-camera').onclick = () => {
     if (html5QrCode && html5QrCode.isScanning) stopScanner();
