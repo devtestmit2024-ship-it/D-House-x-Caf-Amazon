@@ -189,9 +189,9 @@ async function connectBluetoothPrinter({ forceReconnect = false } = {}) {
 
   // ทุกการกดพิมพ์: ตัดของเดิมจริง แล้วดึงเครื่องที่ตั้งค่าไว้มาตรวจและเชื่อมต่อใหม่
   if (forceReconnect) {
-    const previousDevice = await disconnectBluetoothPrinter();
-    // ใช้ออบเจ็กต์เดิมหากยังมีอยู่ เพื่อให้เครื่องที่เพิ่งเปิดกลับมาเชื่อมต่อได้ทันที
-    bluetoothDevice = previousDevice || await getConfiguredPrinterDevice();
+    await disconnectBluetoothPrinter();
+    // ต้องยึด device.id ที่บันทึกใน Settings เสมอ เพื่อไม่ให้ต่อผิดเครื่อง
+    bluetoothDevice = await getConfiguredPrinterDevice();
     showToast(`กำลังเชื่อมต่อเครื่องพิมพ์ใหม่: ${bluetoothDevice.name || 'Bluetooth Printer'}`);
   }
 
