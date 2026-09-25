@@ -224,6 +224,19 @@ async function connectBluetoothPrinter({ forceReconnect = false } = {}) {
     }
     throw new Error('ไม่พบ characteristic ที่เขียนข้อมูลได้');
   } catch (err) {
+    // หลังเพิ่งเปิดเครื่องพิมพ์ Bluetooth อาจยังไม่พร้อมในรอบแรก
+    // ให้รอสั้น ๆ แล้วดึงเครื่องที่บันทึกไว้มาเชื่อมต่อซ้ำอีกหนึ่งครั้ง
+    if (forceReconnect) {
+      forgetPrinter();
+      await sleep(900);
+      try {
+        bluetoothDevice = await getConfiguredPrinterDevice();
+        return await connectBluetoothPrinter();
+      } catch (retryErr) {
+        forgetPrinter();
+        throw new Error(`เชื่อมต่อเครื่องพิมพ์ไม่ได้: ${retryErr.message || err.message}`);
+      }
+    }
     forgetPrinter();
     throw err;
   }
