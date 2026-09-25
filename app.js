@@ -189,9 +189,15 @@ async function connectBluetoothPrinter({ forceReconnect = false } = {}) {
 
   // ทุกการกดพิมพ์: ตัดของเดิมจริง แล้วดึงเครื่องที่ตั้งค่าไว้มาตรวจและเชื่อมต่อใหม่
   if (forceReconnect) {
-    await disconnectBluetoothPrinter();
-    // ต้องยึด device.id ที่บันทึกใน Settings เสมอ เพื่อไม่ให้ต่อผิดเครื่อง
-    bluetoothDevice = await getConfiguredPrinterDevice();
+    const previousDevice = await disconnectBluetoothPrinter();
+    const savedPrinter = getSavedPrinter();
+    // บาง Chrome Android ไม่มี getDevices(): ใช้อุปกรณ์ที่เคยจับคู่ในหน้าเดียวกันได้
+    // แต่ต้องตรวจ id ให้ตรงกับเครื่องที่บันทึกไว้เสมอ
+    if (previousDevice?.id && savedPrinter?.id === previousDevice.id) {
+      bluetoothDevice = previousDevice;
+    } else {
+      bluetoothDevice = await getConfiguredPrinterDevice();
+    }
     showToast(`กำลังเชื่อมต่อเครื่องพิมพ์ใหม่: ${bluetoothDevice.name || 'Bluetooth Printer'}`);
   }
 
