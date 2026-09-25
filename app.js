@@ -166,12 +166,32 @@ function forgetPrinter() {
 }
 window.forgetPrinter = forgetPrinter;
 
+// ตัดการเชื่อมต่อเดิมให้เสร็จก่อนเริ่มเชื่อมต่อใหม่ (Web Bluetooth ไม่มี Promise สำหรับ disconnect)
+async function disconnectBluetoothPrinter() {
+  const device = bluetoothDevice;
+  bluetoothCharacteristic = null;
+  try {
+    if (device?.gatt?.connected) {
+      device.gatt.disconnect();
+      await sleep(350);
+    }
+  } catch (err) {
+    console.warn('ตัดการเชื่อมต่อเครื่องพิมพ์เดิมไม่สำเร็จ:', err);
+  } finally {
+    bluetoothDevice = null;
+  }
+}
+
 async function connectBluetoothPrinter({ forceReconnect = false } = {}) {
   if (!navigator.bluetooth) throw new Error('เบราว์เซอร์นี้ไม่รองรับ Web Bluetooth');
   if (!window.isSecureContext) throw new Error('Web Bluetooth ต้องเปิดผ่าน HTTPS เท่านั้น');
 
-  // ทุกการกดพิมพ์สามารถบังคับให้ทิ้งสถานะเดิม แล้วตรวจเครื่องจากสถานะล่าสุดได้
-  if (forceReconnect) forgetPrinter();
+  // ทุกการกดพิมพ์: ตัดของเดิมจริง แล้วดึงเครื่องที่ตั้งค่าไว้มาตรวจและเชื่อมต่อใหม่
+  if (forceReconnect) {
+    await disconnectBluetoothPrinter();
+    bluetoothDevice = await getConfiguredPrinterDevice();
+    showToast(`กำลังเชื่อมต่อเครื่องพิมพ์ใหม่: ${bluetoothDevice.name || 'Bluetooth Printer'}`);
+  }
 
   if (bluetoothCharacteristic && bluetoothDevice?.gatt?.connected) {
     return bluetoothCharacteristic;
