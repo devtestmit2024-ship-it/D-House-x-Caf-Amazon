@@ -439,7 +439,7 @@ async function printTestReceipt() {
 
   showPrintLoadingDialog('กำลังตรวจสอบและส่งใบเสร็จทดสอบ...');
   try {
-    const characteristic = await connectBluetoothPrinter();
+    const characteristic = await connectBluetoothPrinter({ forceReconnect: true });
     const testData = {
       name: 'ทดสอบระบบ',
       phone: '-',
