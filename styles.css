@@ -220,8 +220,7 @@ body {
 }
 
 /* ส่วนหัวของหน้าจัดการสมาชิกใช้ inline style จึงกำหนด Safe Area ไว้ตรงนี้ */
-#house-modal > div:first-child,
-#house-record-modal > div:first-child {
+.staff-page > div:first-child {
   padding-top: calc(1rem + env(safe-area-inset-top, 0px)) !important;
   padding-left: calc(1rem + env(safe-area-inset-left, 0px)) !important;
   padding-right: calc(1rem + env(safe-area-inset-right, 0px)) !important;
@@ -252,6 +251,16 @@ body {
     calc(20px + env(safe-area-inset-right, 0px))
     calc(20px + env(safe-area-inset-bottom, 0px))
     calc(20px + env(safe-area-inset-left, 0px)) !important;
+}
+
+/* กล่องเข้าสู่ระบบผู้ดูแล: เลื่อนภายในกล่องและใช้ระยะจากคีย์บอร์ดให้น้อยลง */
+#admin-login-dialog {
+  align-items: center !important;
+  overflow-y: auto;
+}
+
+#admin-login-form input {
+  scroll-margin-block: 8px 12vh;
 }
 
 .staff-page-header h3 {

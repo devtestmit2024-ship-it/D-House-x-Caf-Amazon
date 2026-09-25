@@ -6,11 +6,35 @@ let bluetoothCharacteristic = null;
 let currentHouseDataList = [];
 let adminSession = null;
 let isProcessingScan = false;
+let screenWakeLock = null;
+
+// กันหน้าจอดับขณะใช้งาน Staff เพื่อไม่ให้ Bluetooth/การสแกนถูกระบบพักการทำงาน
+async function keepStaffScreenAwake() {
+  if (!navigator.wakeLock || document.visibilityState !== 'visible' || screenWakeLock) return;
+  try {
+    screenWakeLock = await navigator.wakeLock.request('screen');
+    screenWakeLock.addEventListener('release', () => {
+      screenWakeLock = null;
+    });
+  } catch (error) {
+    // บางอุปกรณ์หรือโหมดประหยัดพลังงานไม่อนุญาต Wake Lock — แอปยังใช้งานต่อได้ตามปกติ
+    console.info('ไม่สามารถกันหน้าจอดับได้:', error?.message || error);
+  }
+}
+
+// ระบบจะปล่อย Wake Lock เมื่อแอปอยู่เบื้องหลัง และขอใหม่เมื่อกลับเข้ามาหน้า Staff
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') keepStaffScreenAwake();
+});
+document.addEventListener('pointerdown', keepStaffScreenAwake, { passive: true });
 
 // เมื่อคีย์บอร์ดมือถือเปิด ให้เลื่อนช่องที่กำลังกรอกขึ้นมาอยู่ในพื้นที่ที่มองเห็น
 function keepFocusedFieldVisible() {
   const field = document.activeElement;
   if (!field?.matches('input, textarea, select')) return;
+  // กล่อง User/Password เป็น fixed dialog: ให้ Chrome จัดตาม visual viewport เอง
+  // เพื่อไม่ให้การเลื่อนของแอปทำให้ส่วนบนของกล่องหาย
+  if (field.closest('#admin-login-form')) return;
   window.setTimeout(() => {
     // เลื่อนเท่าที่จำเป็น เพื่อให้ช่องกรอกอยู่ต่ำลงและยังไม่ถูกคีย์บอร์ดบัง
     field.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
@@ -161,12 +185,12 @@ async function getConfiguredPrinterDevice() {
 }
 
 // คืนเครื่องที่เคยอนุญาตและตั้งค่าไว้ หากเบราว์เซอร์รองรับการเรียกดูอุปกรณ์เดิม
-async function findConfiguredPrinterForAutoConnect() {
+async function findConfiguredPrinterForAutoConnect(ignoreCachedDevice = false) {
   const saved = getSavedPrinter();
   if (!saved) throw new Error('ยังไม่ได้ตั้งค่าเครื่องพิมพ์ กรุณาตั้งค่าจากหน้าจัดการสมาชิก');
 
   // ใช้ object เดิมได้ทันทีระหว่างที่หน้าแอปยังเปิดอยู่
-  if (bluetoothDevice?.id === saved.id) return bluetoothDevice;
+  if (!ignoreCachedDevice && bluetoothDevice?.id === saved.id) return bluetoothDevice;
 
   // Chrome บางรุ่นรองรับ getDevices() จึงเชื่อมต่อเครื่องเดิมได้โดยไม่ต้องเปิดตัวเลือก
   if (!navigator.bluetooth?.getDevices) return null;
@@ -224,7 +248,7 @@ async function disconnectBluetoothPrinter() {
   return device;
 }
 
-async function connectBluetoothPrinter({ forceReconnect = false } = {}) {
+async function connectBluetoothPrinter({ forceReconnect = false, retryCount = 3 } = {}) {
   if (!navigator.bluetooth) throw new Error('เบราว์เซอร์นี้ไม่รองรับ Web Bluetooth');
   if (!window.isSecureContext) throw new Error('Web Bluetooth ต้องเปิดผ่าน HTTPS เท่านั้น');
 
@@ -237,9 +261,9 @@ async function connectBluetoothPrinter({ forceReconnect = false } = {}) {
     if (previousDevice?.id && savedPrinter?.id === previousDevice.id) {
       bluetoothDevice = previousDevice;
     } else {
-      bluetoothDevice = await getConfiguredPrinterDevice();
+      bluetoothDevice = await findConfiguredPrinterForAutoConnect(true);
+      if (!bluetoothDevice) throw new Error('ไม่พบเครื่องพิมพ์ที่ตั้งค่าไว้');
     }
-    showToast(`กำลังเชื่อมต่อเครื่องพิมพ์ใหม่: ${bluetoothDevice.name || 'Bluetooth Printer'}`);
   }
 
   if (bluetoothCharacteristic && bluetoothDevice?.gatt?.connected) {
@@ -247,46 +271,45 @@ async function connectBluetoothPrinter({ forceReconnect = false } = {}) {
   }
 
   if (!bluetoothDevice) {
-    bluetoothDevice = await getConfiguredPrinterDevice();
-    showToast(`กำลังตรวจสอบเครื่องพิมพ์: ${bluetoothDevice.name || 'Bluetooth Printer'}`);
+    bluetoothDevice = await findConfiguredPrinterForAutoConnect();
+    if (!bluetoothDevice) throw new Error('ไม่พบเครื่องพิมพ์ที่ตั้งค่าไว้');
   }
 
   bluetoothDevice.addEventListener('gattserverdisconnected', () => {
     bluetoothCharacteristic = null;
-    showToast('เครื่องพิมพ์ Bluetooth ขาดการเชื่อมต่อ');
   });
 
-  try {
-    const server = await bluetoothDevice.gatt.connect();
-    const services = await server.getPrimaryServices();
-    if (services.length === 0) throw new Error('ไม่พบ service พิมพ์');
+  let lastError;
+  // เครื่องที่เพิ่งเปิดอาจต้องใช้เวลาประกาศตัวใน Bluetooth: รอแล้วรีเช็กเงียบ ๆ
+  for (let attempt = 0; attempt <= retryCount; attempt += 1) {
+    try {
+      const server = await bluetoothDevice.gatt.connect();
+      const services = await server.getPrimaryServices();
+      if (services.length === 0) throw new Error('ไม่พบ service พิมพ์');
 
-    for (const service of services) {
-      const chars = await service.getCharacteristics();
-      const writable = chars.find(c => c.properties.writeWithoutResponse || c.properties.write);
-      if (writable) {
-        bluetoothCharacteristic = writable;
-        return writable;
+      for (const service of services) {
+        const chars = await service.getCharacteristics();
+        const writable = chars.find(c => c.properties.writeWithoutResponse || c.properties.write);
+        if (writable) {
+          bluetoothCharacteristic = writable;
+          return writable;
+        }
       }
+      throw new Error('ไม่พบ characteristic ที่เขียนข้อมูลได้');
+    } catch (err) {
+      lastError = err;
+      bluetoothCharacteristic = null;
+      try { bluetoothDevice?.gatt?.disconnect(); } catch (e) {}
+      if (attempt === retryCount) break;
+
+      await sleep(1100);
+      // กรณี Chrome ดึงอุปกรณ์เดิมได้ ให้รับ object ใหม่มาเชื่อมต่อ โดยไม่เปิดตัวเลือก
+      const refreshedDevice = await findConfiguredPrinterForAutoConnect(true);
+      if (refreshedDevice) bluetoothDevice = refreshedDevice;
     }
-    throw new Error('ไม่พบ characteristic ที่เขียนข้อมูลได้');
-  } catch (err) {
-    // หลังเพิ่งเปิดเครื่องพิมพ์ Bluetooth อาจยังไม่พร้อมในรอบแรก
-    // ให้รอสั้น ๆ แล้วดึงเครื่องที่บันทึกไว้มาเชื่อมต่อซ้ำอีกหนึ่งครั้ง
-    if (forceReconnect) {
-      forgetPrinter();
-      await sleep(900);
-      try {
-        bluetoothDevice = await getConfiguredPrinterDevice();
-        return await connectBluetoothPrinter();
-      } catch (retryErr) {
-        forgetPrinter();
-        throw new Error(`เชื่อมต่อเครื่องพิมพ์ไม่ได้: ${retryErr.message || err.message}`);
-      }
-    }
-    forgetPrinter();
-    throw err;
   }
+
+  throw new Error(`เชื่อมต่อเครื่องพิมพ์ไม่ได้: ${lastError?.message || 'เครื่องพิมพ์ยังไม่พร้อมใช้งาน'}`);
 }
 
 async function configureBluetoothPrinter() {
@@ -902,7 +925,7 @@ function renderClientDetailPage(data) {
 }
 
 // ===== หน้าประวัติการใช้สิทธิ์ (ขยายแสดงผลแบบ Full Screen) =====
-async function openHistoryModal(phone, clientData) {
+async function openHistoryModal(phone, clientData, onClose) {
   const modalHtml = `
     <div id="history-modal" class="staff-page">
       
@@ -924,7 +947,7 @@ async function openHistoryModal(phone, clientData) {
   `;
 
   app.innerHTML = modalHtml;
-  document.querySelector('#btn-close-history').onclick = () => renderClientDetailPage(clientData);
+  document.querySelector('#btn-close-history').onclick = onClose || (() => renderClientDetailPage(clientData));
 
   try {
     const historyList = await window.staffApi.getHistory(phone);
@@ -936,12 +959,15 @@ async function openHistoryModal(phone, clientData) {
     }
 
     bodyEl.innerHTML = historyList.map(item => `
-      <div style="border-bottom:1px solid #e2e8f0; padding:0.85rem 0; display:flex; justify-content:space-between; align-items:center;">
-        <div>
+      <div style="border-bottom:1px solid #e2e8f0; padding:0.85rem 0; display:flex; gap:0.75rem; justify-content:space-between; align-items:center;">
+        ${item.productImage
+          ? `<img src="${esc(item.productImage)}" alt="${esc(item.productName)}" style="width:58px; height:58px; flex:0 0 58px; object-fit:cover; border-radius:10px; border:1px solid #e2e8f0; background:#f8fafc;" onerror="this.style.display='none'">`
+          : `<div aria-hidden="true" style="width:58px; height:58px; flex:0 0 58px; display:grid; place-items:center; border-radius:10px; background:#f1f5f9; font-size:25px;">☕</div>`}
+        <div style="min-width:0; flex:1;">
           <div style="font-weight:bold; color:#1e293b; font-size:0.95rem;">${esc(item.productName)}</div>
           <div style="font-size:0.8rem; color:#64748b; margin-top:2px;">เลขบิล: ${esc(item.billNo)} | คูปอง: ${esc(item.couponNo)}</div>
         </div>
-        <div style="font-size:0.85rem; color:#059669; font-weight:bold; text-align:right;">
+        <div style="font-size:0.85rem; color:#059669; font-weight:bold; text-align:right; flex:0 0 auto;">
           ${esc(item.useDate)}
         </div>
       </div>
@@ -1229,12 +1255,25 @@ function renderHouseTable(list) {
       <td style="padding:0.75rem; text-align:center;">${item.allLimit ?? 10}</td>
       <td style="padding:0.75rem; text-align:center;">
         <div style="display:flex; gap:0.4rem; justify-content:center;">
+          <button type="button" data-history-id="${esc(item.id)}" style="padding:0.4rem 0.6rem; background:#2563eb; color:#fff; border:none; border-radius:4px; cursor:pointer; font-size:0.8rem; font-weight:bold; white-space:nowrap;">📜 ประวัติ</button>
           <button onclick="editHouseRecord('${esc(item.id)}')" style="padding:0.4rem 0.6rem; background:#eab308; color:#fff; border:none; border-radius:4px; cursor:pointer; font-size:0.8rem; font-weight:bold;">✏️ แก้ไข</button>
           <button onclick="deleteHouseRecord('${esc(item.id)}', '${esc(item.name)}')" style="padding:0.4rem 0.6rem; background:#dc2626; color:#fff; border:none; border-radius:4px; cursor:pointer; font-size:0.8rem; font-weight:bold;">🗑️ ลบ</button>
         </div>
       </td>
     </tr>
   `).join('');
+
+  tbody.querySelectorAll('[data-history-id]').forEach(button => {
+    button.addEventListener('click', () => {
+      const member = currentHouseDataList.find(item => String(item.id) === button.dataset.historyId);
+      if (!member?.phone) {
+        showToast('ไม่พบเบอร์โทรศัพท์ของสมาชิก');
+        return;
+      }
+      app.classList.remove('member-management-screen');
+      openHistoryModal(member.phone, member, openHouseManagementModal);
+    });
+  });
 }
 
 // ===== เพิ่มฟังก์ชันลบข้อมูลสมาชิก =====
@@ -1282,7 +1321,7 @@ function editHouseRecord(id) {
 
 function openAdminLoginDialog() {
   const dialogHtml = `
-    <div id="admin-login-dialog" style="position:fixed; inset:0; z-index:20000; display:grid; place-items:start center; padding:clamp(24px, 8vh, 80px) 20px 20px; background:rgba(20,40,29,.62);">
+    <div id="admin-login-dialog" style="position:fixed; inset:0; z-index:20000; display:grid; place-items:center; padding:20px; background:rgba(20,40,29,.62);">
       <form id="admin-login-form" style="width:min(100%,360px); display:grid; gap:14px; padding:22px; border-radius:18px; background:#fffaf4; box-shadow:0 20px 45px rgba(0,0,0,.28);">
         <div>
           <h2 style="margin:0; color:#194832; font-size:1.25rem;">ยืนยันสิทธิ์ผู้ดูแล</h2>
@@ -1415,3 +1454,4 @@ function renderMainUI() {
 
 // โหลดหน้าจอหลักเมื่อเริ่มต้น
 renderMainUI();
+keepStaffScreenAwake();
