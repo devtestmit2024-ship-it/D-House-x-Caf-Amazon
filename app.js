@@ -834,7 +834,9 @@ function renderClientDetailPage(data) {
         if (String(err.message || '').includes('คูปองหมดอายุ')) {
           alert('คูปองหมดอายุแล้ว กรุณาให้ลูกค้าสร้างคูปองใหม่');
         } else {
-          alert(`⚠️ การทำรายการถูกยกเลิก: ${err.message || 'โปรดตรวจสอบเครื่องพิมพ์แล้วลองอีกครั้ง'}`);
+          const errorMessage = String(err?.message ?? '').trim()
+            || 'ไม่สามารถเชื่อมต่อเครื่องพิมพ์ที่ตั้งค่าไว้ได้ กรุณาเปิดเครื่องพิมพ์แล้วลองอีกครั้ง';
+          alert(`⚠️ การทำรายการถูกยกเลิก: ${errorMessage}`);
         }
       }
     });
