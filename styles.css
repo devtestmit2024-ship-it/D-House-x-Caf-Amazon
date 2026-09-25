@@ -258,3 +258,12 @@ body {
   .airprint-receipt h1 { font-size: 15px; }
   .airprint-receipt .airprint-product { font-size: 13px; }
 }
+
+/* รองรับคีย์บอร์ดมือถือในฟอร์ม Staff */
+html, body {
+  scroll-padding-bottom: 45vh;
+}
+
+input, textarea, select {
+  scroll-margin-block: 20px 45vh;
+}

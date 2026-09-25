@@ -7,6 +7,18 @@ let currentHouseDataList = [];
 let adminSession = null;
 let isProcessingScan = false;
 
+// เมื่อคีย์บอร์ดมือถือเปิด ให้เลื่อนช่องที่กำลังกรอกขึ้นมาอยู่ในพื้นที่ที่มองเห็น
+function keepFocusedFieldVisible() {
+  const field = document.activeElement;
+  if (!field?.matches('input, textarea, select')) return;
+  window.setTimeout(() => {
+    field.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+  }, 180);
+}
+
+document.addEventListener('focusin', keepFocusedFieldVisible);
+window.visualViewport?.addEventListener('resize', keepFocusedFieldVisible);
+
 const esc = val => String(val ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;' }[c]));
 
 function maskPhoneNumber(phone) {
@@ -485,7 +497,7 @@ async function startScanner() {
         await stopScanner();
         
         const scanPayload = parseScanPayload(decodedText);
-        await processPhoneQuery(scanPayload.searchKey, scanPayload.productId);
+        await processPhoneQuery(scanPayload.searchKey, scanPayload.productId, scanPayload.expiresAt);
       },
       () => {}
     );
@@ -498,7 +510,7 @@ async function startScanner() {
 }
 
 function parseScanPayload(rawText) {
-  if (!rawText) return { searchKey: '', productId: null };
+  if (!rawText) return { searchKey: '', productId: null, expiresAt: null };
   const str = String(rawText).trim();
 
   // QR ของ PWA Client เป็น JSON: couponId, productId, address, phone, expiresAt
@@ -506,7 +518,11 @@ function parseScanPayload(rawText) {
     const payload = JSON.parse(str);
     const searchKey = payload.couponId || payload.Coupon_No || payload.phone || payload.Phone_No;
     if (searchKey) {
-      return { searchKey: String(searchKey).trim(), productId: payload.productId ?? payload.Product_ID ?? null };
+      return {
+        searchKey: String(searchKey).trim(),
+        productId: payload.productId ?? payload.Product_ID ?? null,
+        expiresAt: payload.expiresAt ?? payload.ExpiresAt ?? null
+      };
     }
   } catch (e) {}
 
@@ -519,12 +535,12 @@ function parseScanPayload(rawText) {
   } catch (e) {}
 
   const phoneMatch = str.match(/0\d{8,9}/);
-  if (phoneMatch) return { searchKey: phoneMatch[0], productId: null };
+  if (phoneMatch) return { searchKey: phoneMatch[0], productId: null, expiresAt: null };
 
   const couponMatch = str.match(/CPN-[A-Za-z0-9-]+/i);
-  if (couponMatch) return { searchKey: couponMatch[0].toUpperCase(), productId: null };
+  if (couponMatch) return { searchKey: couponMatch[0].toUpperCase(), productId: null, expiresAt: null };
 
-  return { searchKey: str, productId: null };
+  return { searchKey: str, productId: null, expiresAt: null };
 }
 
 async function stopScanner() {
@@ -637,14 +653,25 @@ function renderAirPrintReceipt(data, billNo) {
   document.querySelector('#btn-airprint').onclick = () => window.print();
 }
 
-async function processPhoneQuery(phone, scannedProductId = null) {
+function isCouponExpired(expiresAt) {
+  const value = Number(expiresAt);
+  if (!Number.isFinite(value) || value <= 0) return false;
+  const expiryMs = value < 1e12 ? value * 1000 : value;
+  return Date.now() >= expiryMs;
+}
+
+async function processPhoneQuery(phone, scannedProductId = null, expiresAt = null) {
   showPrintLoadingDialog('กำลังค้นหาข้อมูลสมาชิก...');
 
   try {
+    if (isCouponExpired(expiresAt)) {
+      throw new Error('คูปองหมดอายุแล้ว กรุณาให้ลูกค้าสร้างคูปองใหม่');
+    }
     const data = applyScannedProductFallback(
       await window.staffApi.checkCouponInfo(phone),
       scannedProductId
     );
+    data.couponExpiresAt = expiresAt;
     removePrintLoadingDialog();
     renderClientDetailPage(data);
   } catch (err) {
@@ -728,6 +755,12 @@ function renderClientDetailPage(data) {
 
   if (hasCouponOrProduct) {
     document.querySelector('#btn-confirm-redeem')?.addEventListener('click', async () => {
+      // ตรวจอีกครั้งก่อนสร้างบิลหรือสั่งพิมพ์ เผื่อคูปองหมดอายุระหว่างเปิดหน้านี้
+      if (isCouponExpired(data.couponExpiresAt)) {
+        alert('คูปองหมดอายุแล้ว กรุณาให้ลูกค้าสร้างคูปองใหม่');
+        return;
+      }
+
       showPrintLoadingDialog('กำลังสร้างเลขบิล...');
 
       try {
@@ -747,14 +780,15 @@ function renderClientDetailPage(data) {
           showToast('ยืนยันใช้สิทธิ์แล้ว กรุณาเลือกพิมพ์ด้วย AirPrint');
           renderAirPrintReceipt(data, generatedBillNo);
         } else {
-          showToast('🎉 พิมพ์ใบเสร็จและใช้สิทธิ์เรียบร้อยแล้ว!');
+          showToast('🎉 พิมพ์ใบเสร็จและใช้สิทธิ์เรียบร้อยแล้ว');
           renderMainUI();
         }
 
       } catch (err) {
         console.error(err);
         removePrintLoadingDialog();
-        alert(`⚠️ การทำรายการถูกยกเลิก (ยังไม่มีการใช้สิทธิ์): ${err.message}`);
+        /*alert(`⚠️ การทำรายการถูกยกเลิกเนื่องจาก (ไม่สามารถเชื่อมต่อกับเครื่องพิมพ์ที่ตั้งค่าไว้ได้): ${err.message}`);*/
+        alert(`⚠️ การทำรายการถูกยกเลิกเนื่องจาก (ไม่สามารถเชื่อมต่อกับเครื่องพิมพ์ที่ตั้งค่าไว้ได้): ${โปรดตรวจสอบเครื่องพิมพ์แล้วลองอีกครั้ง}`);
       }
     });
   }
