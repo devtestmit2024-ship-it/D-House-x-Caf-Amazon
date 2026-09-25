@@ -12,7 +12,8 @@ function keepFocusedFieldVisible() {
   const field = document.activeElement;
   if (!field?.matches('input, textarea, select')) return;
   window.setTimeout(() => {
-    field.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+    // เลื่อนเท่าที่จำเป็น เพื่อให้ช่องกรอกอยู่ต่ำลงและยังไม่ถูกคีย์บอร์ดบัง
+    field.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
   }, 180);
 }
 
@@ -159,11 +160,30 @@ async function getConfiguredPrinterDevice() {
   return device;
 }
 
-// เปิดตัวเลือก Bluetooth จากการกดปุ่มของผู้ใช้ แล้วอนุญาตเฉพาะเครื่องที่ตั้งค่าไว้
+// คืนเครื่องที่เคยอนุญาตและตั้งค่าไว้ หากเบราว์เซอร์รองรับการเรียกดูอุปกรณ์เดิม
+async function findConfiguredPrinterForAutoConnect() {
+  const saved = getSavedPrinter();
+  if (!saved) throw new Error('ยังไม่ได้ตั้งค่าเครื่องพิมพ์ กรุณาตั้งค่าจากหน้าจัดการสมาชิก');
+
+  // ใช้ object เดิมได้ทันทีระหว่างที่หน้าแอปยังเปิดอยู่
+  if (bluetoothDevice?.id === saved.id) return bluetoothDevice;
+
+  // Chrome บางรุ่นรองรับ getDevices() จึงเชื่อมต่อเครื่องเดิมได้โดยไม่ต้องเปิดตัวเลือก
+  if (!navigator.bluetooth?.getDevices) return null;
+  const devices = await navigator.bluetooth.getDevices();
+  const device = devices.find(item => item.id === saved.id) || null;
+  if (device) bluetoothDevice = device;
+  return device;
+}
+
+// เลือกเครื่องที่ตั้งค่าไว้แบบอัตโนมัติก่อน; เปิดตัวเลือก Bluetooth เฉพาะเมื่อหาเครื่องเดิมไม่พบ
 async function chooseConfiguredPrinterForPrint() {
   const saved = getSavedPrinter();
   if (!saved) throw new Error('ยังไม่ได้ตั้งค่าเครื่องพิมพ์ กรุณาตั้งค่าจากหน้าจัดการสมาชิก');
   if (!navigator.bluetooth) throw new Error('เบราว์เซอร์นี้ไม่รองรับ Web Bluetooth');
+
+  const configuredDevice = await findConfiguredPrinterForAutoConnect();
+  if (configuredDevice) return configuredDevice;
 
   const hasSpecificName = saved.name && saved.name !== 'Bluetooth Printer';
   const options = hasSpecificName

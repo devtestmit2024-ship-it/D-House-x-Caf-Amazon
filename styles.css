@@ -136,6 +136,11 @@ body {
 
 .shell {
   min-height: 100dvh;
+  padding:
+    calc(22px + env(safe-area-inset-top, 0px))
+    calc(22px + env(safe-area-inset-right, 0px))
+    calc(38px + env(safe-area-inset-bottom, 0px))
+    calc(22px + env(safe-area-inset-left, 0px));
 }
 
 .logout {
@@ -181,6 +186,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* หน้าแรก Staff: เว้นจากแถบสถานะ/รอยบาก เพื่อไม่ให้โลโก้ถูกทับ */
@@ -211,6 +217,41 @@ body {
   padding: calc(14px + env(safe-area-inset-top, 0px)) 16px 14px;
   background: #fffaf4;
   border-bottom: 1px solid var(--line);
+}
+
+/* ส่วนหัวของหน้าจัดการสมาชิกใช้ inline style จึงกำหนด Safe Area ไว้ตรงนี้ */
+#house-modal > div:first-child,
+#house-record-modal > div:first-child {
+  padding-top: calc(1rem + env(safe-area-inset-top, 0px)) !important;
+  padding-left: calc(1rem + env(safe-area-inset-left, 0px)) !important;
+  padding-right: calc(1rem + env(safe-area-inset-right, 0px)) !important;
+}
+
+/* ปุ่ม/ข้อความลอยและกล่องยืนยันทุกชนิดต้องไม่อยู่ใต้แถบระบบ */
+#toast {
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px)) !important;
+  left: calc(50% + (env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)) / 2) !important;
+}
+
+#btn-manage-member {
+  left: calc(20px + env(safe-area-inset-left, 0px)) !important;
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px)) !important;
+}
+
+#btn-test-print {
+  right: calc(20px + env(safe-area-inset-right, 0px)) !important;
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px)) !important;
+}
+
+#pwa-install-guide,
+#pwa-installed-notice,
+#printer-settings-dialog,
+#admin-login-dialog {
+  padding:
+    calc(20px + env(safe-area-inset-top, 0px))
+    calc(20px + env(safe-area-inset-right, 0px))
+    calc(20px + env(safe-area-inset-bottom, 0px))
+    calc(20px + env(safe-area-inset-left, 0px)) !important;
 }
 
 .staff-page-header h3 {
@@ -261,9 +302,9 @@ body {
 
 /* รองรับคีย์บอร์ดมือถือในฟอร์ม Staff */
 html, body {
-  scroll-padding-bottom: 45vh;
+  scroll-padding-bottom: 30vh;
 }
 
 input, textarea, select {
-  scroll-margin-block: 20px 45vh;
+  scroll-margin-block: 16px 30vh;
 }
