@@ -166,9 +166,12 @@ function forgetPrinter() {
 }
 window.forgetPrinter = forgetPrinter;
 
-async function connectBluetoothPrinter() {
+async function connectBluetoothPrinter({ forceReconnect = false } = {}) {
   if (!navigator.bluetooth) throw new Error('เบราว์เซอร์นี้ไม่รองรับ Web Bluetooth');
   if (!window.isSecureContext) throw new Error('Web Bluetooth ต้องเปิดผ่าน HTTPS เท่านั้น');
+
+  // ทุกการกดพิมพ์สามารถบังคับให้ทิ้งสถานะเดิม แล้วตรวจเครื่องจากสถานะล่าสุดได้
+  if (forceReconnect) forgetPrinter();
 
   if (bluetoothCharacteristic && bluetoothDevice?.gatt?.connected) {
     return bluetoothCharacteristic;
@@ -420,7 +423,8 @@ async function printReceiptESC_POS(characteristic, lines) {
 }
 
 async function runPrint(data, billNo) {
-  const characteristic = await connectBluetoothPrinter();
+  // อย่าใช้ผลการเชื่อมต่อครั้งก่อน โดยเฉพาะกรณีเปิดเครื่องพิมพ์หลังเคยเชื่อมต่อไม่สำเร็จ
+  const characteristic = await connectBluetoothPrinter({ forceReconnect: true });
   const receipts = createReceiptLines(data, billNo);
 
   await printReceiptESC_POS(characteristic, receipts.original);
