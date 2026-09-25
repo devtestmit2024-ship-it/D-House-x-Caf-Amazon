@@ -1190,7 +1190,7 @@ function openAdminLoginDialog() {
 function renderMainUI() {
   app.classList.remove('member-management-screen');
   app.innerHTML = `
-    <div class="shell" style="max-width: 480px; margin: 0 auto; padding: 1rem; font-family: sans-serif; position: relative; min-height: 80vh;">
+    <div class="shell staff-main-shell" style="max-width: 480px; margin: 0 auto; padding: 1rem; font-family: sans-serif; position: relative; min-height: 80vh;">
       <header style="text-align: center; margin-bottom: 1.5rem;">
         <img 
           src="public/assets/image/icon-192.png" 

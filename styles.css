@@ -183,6 +183,11 @@ body {
   overflow-y: auto;
 }
 
+/* หน้าแรก Staff: เว้นจากแถบสถานะ/รอยบาก เพื่อไม่ให้โลโก้ถูกทับ */
+.staff-main-shell {
+  padding-top: calc(24px + env(safe-area-inset-top, 0px)) !important;
+}
+
 /* เฉพาะหน้าจัดการข้อมูลสมาชิก: ใช้ความกว้างเต็มจอสำหรับตารางและข้อมูล */
 #app.member-management-screen {
   max-width: none;
