@@ -159,6 +159,27 @@ async function getConfiguredPrinterDevice() {
   return device;
 }
 
+// เปิดตัวเลือก Bluetooth จากการกดปุ่มของผู้ใช้ แล้วอนุญาตเฉพาะเครื่องที่ตั้งค่าไว้
+async function chooseConfiguredPrinterForPrint() {
+  const saved = getSavedPrinter();
+  if (!saved) throw new Error('ยังไม่ได้ตั้งค่าเครื่องพิมพ์ กรุณาตั้งค่าจากหน้าจัดการสมาชิก');
+  if (!navigator.bluetooth) throw new Error('เบราว์เซอร์นี้ไม่รองรับ Web Bluetooth');
+
+  const hasSpecificName = saved.name && saved.name !== 'Bluetooth Printer';
+  const options = hasSpecificName
+    ? { filters: [{ name: saved.name }], optionalServices: PRINTER_SERVICES }
+    : { acceptAllDevices: true, optionalServices: PRINTER_SERVICES };
+
+  const selectedDevice = await navigator.bluetooth.requestDevice(options);
+  if (selectedDevice.id !== saved.id) {
+    try { selectedDevice.gatt?.disconnect(); } catch (e) {}
+    throw new Error(`กรุณาเลือกเครื่องพิมพ์ที่ตั้งค่าไว้ (${saved.name}) เท่านั้น`);
+  }
+
+  bluetoothDevice = selectedDevice;
+  return selectedDevice;
+}
+
 function forgetPrinter() {
   try { bluetoothDevice?.gatt?.disconnect(); } catch (e) {}
   bluetoothDevice = null;
@@ -478,8 +499,10 @@ async function printTestReceipt() {
     return;
   }
 
-  showPrintLoadingDialog('กำลังตรวจสอบและส่งใบเสร็จทดสอบ...');
   try {
+    // ต้องเรียกจาก click โดยตรง เพื่อให้ Chrome เปิดตัวเลือก Bluetooth ได้
+    await chooseConfiguredPrinterForPrint();
+    showPrintLoadingDialog('กำลังตรวจสอบและส่งใบเสร็จทดสอบ...');
     const characteristic = await connectBluetoothPrinter({ forceReconnect: true });
     const testData = {
       name: 'ทดสอบระบบ',
@@ -804,6 +827,15 @@ function renderClientDetailPage(data) {
       // ตรวจอีกครั้งก่อนสร้างบิลหรือสั่งพิมพ์ เผื่อคูปองหมดอายุระหว่างเปิดหน้านี้
       if (isCouponExpired(data.couponExpiresAt)) {
         alert('คูปองหมดอายุแล้ว กรุณาให้ลูกค้าสร้างคูปองใหม่');
+        return;
+      }
+
+      // ให้ผู้ใช้ยืนยันเครื่องที่ตั้งค่าไว้ก่อน (จำเป็นสำหรับ Chrome ที่ไม่มี getDevices)
+      try {
+        await chooseConfiguredPrinterForPrint();
+      } catch (err) {
+        const errorMessage = String(err?.message ?? '').trim() || 'ไม่สามารถเลือกเครื่องพิมพ์ได้';
+        alert(`⚠️ ไม่สามารถเลือกเครื่องพิมพ์: ${errorMessage}`);
         return;
       }
 
