@@ -133,18 +133,28 @@ async generateBillNo() {
    * @param {string} searchKey - เบอร์โทรศัพท์ หรือ รหัสคูปอง
    */
   // api.js (แก้ไข checkCouponInfo เพิ่มการดึง Project_ID)
-  async checkCouponInfo(searchKey) {
+  async checkCouponInfo(searchKey, fallbackPhone = null) {
   const supabase = getSupabase();
   const cleanKey = cleanString(searchKey);
+  const cleanFallbackPhone = cleanString(fallbackPhone);
 
   if (!cleanKey) throw new Error('ข้อมูลเบอร์โทรศัพท์หรือรหัสคูปองไม่ถูกต้อง');
 
   // 1. เพิ่ม Project_ID ใน .select()
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('Cafe_Amazon_Promosion_House')
     .select('ID, Name, Phone_No, House_Number, Project_ID, All_Use, All_Limit, Confirm_Coupon, LastUse_Date, Coupon_No, Product_ID')
     .or(`Phone_No.eq.${cleanKey},Coupon_No.eq.${cleanKey}`)
     .maybeSingle();
+
+  // เมื่อ Coupon_No ถูกล้างหลังหมดอายุ ให้ใช้เบอร์ใน QR เพื่อพบรายการเดิมและแจ้งสถานะให้ถูกต้อง
+  if (!data && !error && cleanFallbackPhone) {
+    ({ data, error } = await supabase
+      .from('Cafe_Amazon_Promosion_House')
+      .select('ID, Name, Phone_No, House_Number, Project_ID, All_Use, All_Limit, Confirm_Coupon, LastUse_Date, Coupon_No, Product_ID')
+      .eq('Phone_No', cleanFallbackPhone)
+      .maybeSingle());
+  }
 
   if (error) throw new Error(`เกิดข้อผิดพลาดในการดึงข้อมูล: ${error.message}`);
   if (!data) throw new Error(`ไม่พบข้อมูลสมาชิกหรือคูปอง (${cleanKey}) ในระบบ`);
@@ -153,8 +163,8 @@ async generateBillNo() {
     throw new Error('❌ คูปองนี้ถูกใช้งานไปแล้ว ไม่สามารถใช้ซ้ำได้');
   }
 
-  if (!data.Coupon_No && cleanKey.startsWith('CPN-')) {
-    throw new Error('❌ ไม่พบคูปองนี้ในระบบ (อาจถูกใช้ไปแล้วหรือหมดอายุ)');
+  if (!data.Coupon_No || (cleanKey.startsWith('CPN-') && data.Coupon_No !== cleanKey)) {
+    throw new Error('คูปองหมดอายุแล้ว กรุณาให้ลูกค้าสร้างคูปองใหม่');
   }
 
   const productIdStr = data.Product_ID ? String(data.Product_ID) : null;
@@ -176,6 +186,27 @@ async generateBillNo() {
     productName: productName,
     productImage: product?.image || null
   };
+  },
+
+  // ตรวจสถานะล่าสุดก่อนสร้างบิลหรือเชื่อมต่อเครื่องพิมพ์
+  async validateCouponForRedeem(phone, couponNo) {
+    const cleanPhone = cleanString(phone);
+    const cleanCouponNo = cleanString(couponNo);
+    if (!cleanPhone || !cleanCouponNo) {
+      throw new Error('คูปองหมดอายุแล้ว กรุณาให้ลูกค้าสร้างคูปองใหม่');
+    }
+
+    const { data, error } = await getSupabase()
+      .from('Cafe_Amazon_Promosion_House')
+      .select('Coupon_No, Confirm_Coupon')
+      .eq('Phone_No', cleanPhone)
+      .maybeSingle();
+
+    if (error) throw new Error(`ตรวจสอบคูปองไม่สำเร็จ: ${error.message}`);
+    if (!data || data.Confirm_Coupon === true || data.Coupon_No !== cleanCouponNo) {
+      throw new Error('คูปองหมดอายุแล้ว กรุณาให้ลูกค้าสร้างคูปองใหม่');
+    }
+    return true;
   },
 
   /**

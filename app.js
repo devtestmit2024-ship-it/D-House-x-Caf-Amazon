@@ -497,7 +497,7 @@ async function startScanner() {
         await stopScanner();
         
         const scanPayload = parseScanPayload(decodedText);
-        await processPhoneQuery(scanPayload.searchKey, scanPayload.productId, scanPayload.expiresAt);
+        await processPhoneQuery(scanPayload.searchKey, scanPayload.productId, scanPayload.expiresAt, scanPayload.memberPhone);
       },
       () => {}
     );
@@ -521,7 +521,8 @@ function parseScanPayload(rawText) {
       return {
         searchKey: String(searchKey).trim(),
         productId: payload.productId ?? payload.Product_ID ?? null,
-        expiresAt: payload.expiresAt ?? payload.ExpiresAt ?? null
+        expiresAt: payload.expiresAt ?? payload.ExpiresAt ?? null,
+        memberPhone: payload.phone ?? payload.Phone_No ?? null
       };
     }
   } catch (e) {}
@@ -660,7 +661,7 @@ function isCouponExpired(expiresAt) {
   return Date.now() >= expiryMs;
 }
 
-async function processPhoneQuery(phone, scannedProductId = null, expiresAt = null) {
+async function processPhoneQuery(phone, scannedProductId = null, expiresAt = null, memberPhone = null) {
   showPrintLoadingDialog('กำลังค้นหาข้อมูลสมาชิก...');
 
   try {
@@ -668,7 +669,7 @@ async function processPhoneQuery(phone, scannedProductId = null, expiresAt = nul
       throw new Error('คูปองหมดอายุแล้ว กรุณาให้ลูกค้าสร้างคูปองใหม่');
     }
     const data = applyScannedProductFallback(
-      await window.staffApi.checkCouponInfo(phone),
+      await window.staffApi.checkCouponInfo(phone, memberPhone),
       scannedProductId
     );
     data.couponExpiresAt = expiresAt;
@@ -761,9 +762,13 @@ function renderClientDetailPage(data) {
         return;
       }
 
-      showPrintLoadingDialog('กำลังสร้างเลขบิล...');
+      showPrintLoadingDialog('กำลังตรวจสอบสถานะคูปอง...');
 
       try {
+        // ต้องผ่านการตรวจ Coupon_No ล่าสุดจากฐานข้อมูลก่อน จึงค่อยเชื่อมต่อเครื่องพิมพ์
+        await window.staffApi.validateCouponForRedeem(data.phone, data.couponNo);
+
+        updatePrintLoadingMessage('กำลังสร้างเลขบิล...');
         const generatedBillNo = await window.staffApi.generateBillNo();
         const useAirPrint = !supportsBluetoothPrinting();
 
@@ -787,8 +792,11 @@ function renderClientDetailPage(data) {
       } catch (err) {
         console.error(err);
         removePrintLoadingDialog();
-        /*alert(`⚠️ การทำรายการถูกยกเลิกเนื่องจาก (ไม่สามารถเชื่อมต่อกับเครื่องพิมพ์ที่ตั้งค่าไว้ได้): ${err.message}`);*/
-        alert(`⚠️ การทำรายการถูกยกเลิกเนื่องจาก (ไม่สามารถเชื่อมต่อกับเครื่องพิมพ์ที่ตั้งค่าไว้ได้): ${โปรดตรวจสอบเครื่องพิมพ์แล้วลองอีกครั้ง}`);
+        if (String(err.message || '').includes('คูปองหมดอายุ')) {
+          alert('คูปองหมดอายุแล้ว กรุณาให้ลูกค้าสร้างคูปองใหม่');
+        } else {
+          alert(`⚠️ การทำรายการถูกยกเลิก: ${err.message || 'โปรดตรวจสอบเครื่องพิมพ์แล้วลองอีกครั้ง'}`);
+        }
       }
     });
   }
