@@ -65,7 +65,8 @@ CREATE TABLE "Cafe_Amazon_Promosion_House" (
     "Confirm_Coupon" BOOLEAN NOT NULL DEFAULT FALSE,
     "Coupon_No" VARCHAR(50) DEFAULT NULL,
     "Product_ID" VARCHAR(13) DEFAULT NULL,
-    "Access_Level" INT DEFAULT 0
+    "Access_Level" INT DEFAULT 0,
+    CONSTRAINT "UX_CafeAmazonHouse_Phone" UNIQUE ("Phone_No")
 );
 
 -- 3. สร้างตารางประวัติการใช้สิทธิ์/ใบเสร็จ: Cafe_Amazon_Bill
@@ -83,8 +84,8 @@ CREATE TABLE "Cafe_Amazon_Bill" (
     "Coupon_No" VARCHAR(50) DEFAULT NULL
 );
 
--- 4. สร้าง Index เพื่อเพิ่มความเร็วในการค้นหาผ่าน Phone_No, Coupon_No และ Foreign Key
-CREATE INDEX "idx_house_phone" ON "Cafe_Amazon_Promosion_House" ("Phone_No");
+-- 4. สร้าง Index เพื่อเพิ่มความเร็วในการค้นหาผ่าน Coupon_No และ Foreign Key
+-- Phone_No มี UNIQUE constraint อยู่แล้ว จึงมี index อัตโนมัติ
 CREATE INDEX "idx_house_coupon" ON "Cafe_Amazon_Promosion_House" ("Coupon_No");
 CREATE INDEX "idx_bill_pk" ON "Cafe_Amazon_Bill" ("Cafe_Amazon_PK");
 
@@ -118,7 +119,7 @@ CREATE TABLE `Cafe_Amazon_Promosion_House` (
   `Coupon_No` VARCHAR(50) NULL DEFAULT NULL,
   `Product_ID` VARCHAR(13) NULL DEFAULT NULL,
   PRIMARY KEY (`ID`),
-  INDEX `idx_phone_no` (`Phone_No`),
+  UNIQUE KEY `UX_CafeAmazonHouse_Phone` (`Phone_No`),
   INDEX `idx_coupon_no` (`Coupon_No`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

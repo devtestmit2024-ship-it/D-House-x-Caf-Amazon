@@ -333,6 +333,23 @@ async getHistory(userPhone) {
       throw new Error('กรุณากรอกชื่อ-นามสกุล และ เบอร์โทรศัพท์ ให้ครบถ้วน');
     }
 
+    // ห้ามใช้เบอร์โทรศัพท์เดียวกันกับสมาชิกคนอื่น
+    // กรณีแก้ไข จะไม่นับข้อมูลรายการเดิมของตนเองว่าเป็นเบอร์ซ้ำ
+    let duplicatePhoneQuery = supabase
+      .from('Cafe_Amazon_Promosion_House')
+      .select('ID, Name')
+      .eq('Phone_No', cleanPhone);
+
+    if (payload.id) {
+      duplicatePhoneQuery = duplicatePhoneQuery.neq('ID', payload.id);
+    }
+
+    const { data: duplicateMember, error: duplicateError } = await duplicatePhoneQuery.maybeSingle();
+    if (duplicateError) throw new Error(`ตรวจสอบเบอร์โทรศัพท์ซ้ำไม่สำเร็จ: ${duplicateError.message}`);
+    if (duplicateMember) {
+      throw new Error('เบอร์โทรศัพท์นี้มีข้อมูลสมาชิกอยู่แล้ว กรุณาใช้เบอร์โทรศัพท์อื่น');
+    }
+
     const dayLimitValue = payload.quotaPerDay ?? payload.Day_Limit ?? 1;
 
     const recordData = {

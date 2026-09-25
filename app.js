@@ -818,12 +818,13 @@ async function openHouseManagementModal() {
     showToast('กรุณายืนยันสิทธิ์แอดมินก่อนจัดการสมาชิก');
     return;
   }
+  app.classList.add('member-management-screen');
   const modalHtml = `
     <div id="house-modal" class="staff-page">
       
       <div style="padding:1rem; background:#fff; border-bottom:1px solid #cbd5e1; display:flex; align-items:center; gap:0.5rem; z-index:10;">
         <button class="back" id="btn-close-house-modal" type="button" aria-label="กลับ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
-        <h3 style="margin:0; font-size:1.1rem; color:#0284c7;">🏠 จัดการตารางข้อมูลสมาชิก</h3>
+        <h3 style="margin:0; font-size:1.1rem; color:#0284c7;">🏠 จัดการข้อมูลสมาชิก</h3>
       </div>
 
       <div style="flex:1; overflow-y:auto; padding:1rem; max-width:1000px; width:100%; margin:0 auto; box-sizing:border-box;">
@@ -1140,7 +1141,7 @@ function editHouseRecord(id) {
 
 function openAdminLoginDialog() {
   const dialogHtml = `
-    <div id="admin-login-dialog" style="position:fixed; inset:0; z-index:20000; display:grid; place-items:center; padding:20px; background:rgba(20,40,29,.62);">
+    <div id="admin-login-dialog" style="position:fixed; inset:0; z-index:20000; display:grid; place-items:start center; padding:clamp(24px, 8vh, 80px) 20px 20px; background:rgba(20,40,29,.62);">
       <form id="admin-login-form" style="width:min(100%,360px); display:grid; gap:14px; padding:22px; border-radius:18px; background:#fffaf4; box-shadow:0 20px 45px rgba(0,0,0,.28);">
         <div>
           <h2 style="margin:0; color:#194832; font-size:1.25rem;">ยืนยันสิทธิ์ผู้ดูแล</h2>
@@ -1187,6 +1188,7 @@ function openAdminLoginDialog() {
 
 // ===== หน้าหลัก UI =====
 function renderMainUI() {
+  app.classList.remove('member-management-screen');
   app.innerHTML = `
     <div class="shell" style="max-width: 480px; margin: 0 auto; padding: 1rem; font-family: sans-serif; position: relative; min-height: 80vh;">
       <header style="text-align: center; margin-bottom: 1.5rem;">

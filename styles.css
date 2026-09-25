@@ -183,6 +183,22 @@ body {
   overflow-y: auto;
 }
 
+/* เฉพาะหน้าจัดการข้อมูลสมาชิก: ใช้ความกว้างเต็มจอสำหรับตารางและข้อมูล */
+#app.member-management-screen {
+  max-width: none;
+  margin: 0;
+}
+
+#app.member-management-screen #house-modal {
+  width: 100%;
+  min-height: 100dvh;
+}
+
+#house-modal > div[style*="max-width"] {
+  max-width: none !important;
+  padding: 16px clamp(16px, 3vw, 48px) 32px !important;
+}
+
 .staff-page-header {
   display: flex;
   align-items: center;
