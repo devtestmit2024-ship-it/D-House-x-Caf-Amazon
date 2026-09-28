@@ -821,7 +821,7 @@ function renderClientDetailPage(data) {
           <div style="display:flex; flex-direction:column; gap:0.4rem; font-size:0.95rem; color:#334155;">
             <p style="margin:0;"><strong>ชื่อ:</strong> ${esc(displayName)}</p>
             <p style="margin:0;"><strong>เบอร์โทร:</strong> ${esc(maskPhoneNumber(data.phone))}</p>
-            <p style="margin:0;"><strong>บ้านเลขที่:</strong> ${esc(data.address)} ${data.project && data.project !== '-' ? esc(data.project) : ''}</p>
+            <p style="margin:0;"><strong>รายละเอียด /บ้านเลขที่:</strong> ${esc(data.address)} ${data.project && data.project !== '-' ? esc(data.project) : ''}</p>
             <p style="margin:0;"><strong>คูปอง:</strong> <span style="color:#059669; font-weight:bold;">${esc(data.couponNo || '-')}</span></p>
             <p style="margin:0;"><strong>สินค้า:</strong> <span style="color:#0284c7; font-weight:bold;">${esc(data.productName)}</span></p>
           </div>
@@ -1016,8 +1016,8 @@ async function openHouseManagementModal() {
                 <tr style="background:#059669; color:#fff;">
                   <th style="padding:0.75rem;">ชื่อ-นามสกุล</th>
                   <th style="padding:0.75rem;">เบอร์โทรศัพท์</th>
-                  <th style="padding:0.75rem;">บ้านเลขที่</th>
-                  <th style="padding:0.75rem;">โครงการ</th>
+                  <th style="padding:0.75rem;">รายละเอียด /บ้านเลขที่</th>
+                  <th style="padding:0.75rem;">หมายเหตุ</th>
                   <th style="padding:0.75rem; text-align:center;">สิทธิ์/วัน</th>
                   <th style="padding:0.75rem; text-align:center;">ใช้ไปแล้ว</th>
                   <th style="padding:0.75rem; text-align:center;">สิทธิ์ทั้งหมด</th>
@@ -1038,7 +1038,17 @@ async function openHouseManagementModal() {
   `;
 
   app.innerHTML = modalHtml;
-  document.querySelector('#btn-close-house-modal').onclick = renderMainUI;
+  document.querySelector('#btn-close-house-modal').onclick = async () => {
+    try {
+      if (!await window.staffApi.hasAdminUser()) {
+        showToast('ต้องเพิ่ม User ที่เป็นแอดมินอย่างน้อย 1 User ก่อน จึงจะออกจากหน้านี้ได้');
+        return;
+      }
+      renderMainUI();
+    } catch (error) {
+      showToast(error.message);
+    }
+  };
 
   document.querySelector('#btn-house-refresh').onclick = async () => {
     const searchInput = document.querySelector('#house-search-input');
@@ -1063,6 +1073,7 @@ async function openHouseManagementModal() {
 
 // ===== หน้าฟอร์ม เพิ่ม / แก้ไข สมาชิก (ขยายแสดงผลแบบ Full Screen) =====
 function openHouseRecordModal(title, isEdit = false, record = null) {
+  const needsFirstAdmin = !currentHouseDataList.some(item => Number(item.accessLevel) === 1);
   const modalHtml = `
     <div id="house-record-modal" class="staff-page">
       
@@ -1074,7 +1085,7 @@ function openHouseRecordModal(title, isEdit = false, record = null) {
       <div style="max-width:500px; width:100%; margin:0 auto; padding:1.25rem; box-sizing:border-box; overflow-y:auto; flex:1;">
         
         <div style="border:1px solid #cbd5e1; border-radius:12px; background:#fff; overflow:hidden; box-shadow:0 4px 6px -1px rgba(0,0,0,0.05);">
-          
+          ${!isEdit && needsFirstAdmin ? '<div role="alert" style="margin:1.25rem 1.25rem 0; padding:.85rem; border:1px solid #f59e0b; border-radius:8px; background:#fffbeb; color:#92400e; line-height:1.5; font-size:.9rem;"><strong>ต้องสร้าง User แอดมินก่อน</strong><br>กรุณาเลือก “แอดมิน” ในช่องสถานะผู้ใช้งาน แล้วบันทึกข้อมูล จึงจะออกจากหน้าจัดการสมาชิกได้</div>' : ''}
           <form id="house-record-form" style="padding:1.25rem; display:flex; flex-direction:column; gap:0.8rem;">
             <input type="hidden" id="h-field-id" value="${esc(record?.id || '')}" />
             
@@ -1087,11 +1098,11 @@ function openHouseRecordModal(title, isEdit = false, record = null) {
               <input type="tel" id="h-field-phone" value="${esc(record?.phone || '')}" required style="width:100%; padding:0.6rem; border:1px solid #cbd5e1; border-radius:6px; box-sizing:border-box; font-size:0.95rem;" />
             </div>
             <div>
-              <label style="font-size:0.85rem; font-weight:bold; color:#475569;">บ้านเลขที่</label>
+              <label style="font-size:0.85rem; font-weight:bold; color:#475569;">รายละเอียด /บ้านเลขที่</label>
               <input type="text" id="h-field-address" value="${esc(record?.address || '')}" style="width:100%; padding:0.6rem; border:1px solid #cbd5e1; border-radius:6px; box-sizing:border-box; font-size:0.95rem;" />
             </div>
             <div>
-              <label style="font-size:0.85rem; font-weight:bold; color:#475569;">โครงการ</label>
+              <label style="font-size:0.85rem; font-weight:bold; color:#475569;">หมายเหตุ</label>
               <input type="text" id="h-field-project" value="${esc(record?.project || '')}" style="width:100%; padding:0.6rem; border:1px solid #cbd5e1; border-radius:6px; box-sizing:border-box; font-size:0.95rem;" />
             </div>
             <div>
@@ -1319,7 +1330,19 @@ function editHouseRecord(id) {
   openHouseRecordModal('✏️ แก้ไขข้อมูลสมาชิก', true, record);
 }
 
-function openAdminLoginDialog() {
+async function openAdminLoginDialog() {
+  try {
+    const hasAdmin = await window.staffApi.hasAdminUser();
+    if (!hasAdmin) {
+      adminSession = { accessLevel: 1, initialSetup: true };
+      await openHouseManagementModal();
+      return;
+    }
+  } catch (error) {
+    showToast(error.message);
+    return;
+  }
+
   const dialogHtml = `
     <div id="admin-login-dialog" style="position:fixed; inset:0; z-index:20000; display:grid; place-items:center; padding:20px; background:rgba(20,40,29,.62);">
       <form id="admin-login-form" style="width:min(100%,360px); display:grid; gap:14px; padding:22px; border-radius:18px; background:#fffaf4; box-shadow:0 20px 45px rgba(0,0,0,.28);">

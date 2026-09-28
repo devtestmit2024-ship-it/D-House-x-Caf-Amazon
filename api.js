@@ -30,6 +30,18 @@ const PRODUCT_MAP = {
 };
 
 window.staffApi = {
+  /** ตรวจว่ามีบัญชีผู้ดูแลสำหรับเปิดหน้าจัดการสมาชิกแล้วหรือไม่ */
+  async hasAdminUser() {
+    const { data, error } = await getSupabase()
+      .from('Cafe_Amazon_Promosion_House')
+      .select('ID')
+      .eq('Access_Level', 1)
+      .limit(1);
+
+    if (error) throw new Error(`ตรวจสอบผู้ดูแลระบบไม่สำเร็จ: ${error.message}`);
+    return (data || []).length > 0;
+  },
+
   /**
    * ตรวจสอบสิทธิ์ก่อนเปิดหน้าจัดการสมาชิก
    * User ใช้เบอร์โทรศัพท์ที่บันทึกใน Phone_No
@@ -132,7 +144,7 @@ async generateBillNo() {
    * 1. ค้นหาและตรวจสอบข้อมูลสิทธิ์ก่อนทำรายการ
    * @param {string} searchKey - เบอร์โทรศัพท์ หรือ รหัสคูปอง
    */
-  // api.js (แก้ไข checkCouponInfo เพิ่มการดึง Project_ID)
+  // api.js (ดึง Detail และ Remark ของสมาชิก)
   async checkCouponInfo(searchKey, fallbackPhone = null) {
   const supabase = getSupabase();
   const cleanKey = cleanString(searchKey);
@@ -140,10 +152,9 @@ async generateBillNo() {
 
   if (!cleanKey) throw new Error('ข้อมูลเบอร์โทรศัพท์หรือรหัสคูปองไม่ถูกต้อง');
 
-  // 1. เพิ่ม Project_ID ใน .select()
   let { data, error } = await supabase
     .from('Cafe_Amazon_Promosion_House')
-    .select('ID, Name, Phone_No, House_Number, Project_ID, All_Use, All_Limit, Confirm_Coupon, LastUse_Date, Coupon_No, Product_ID')
+    .select('ID, Name, Phone_No, Detail, Remark, All_Use, All_Limit, Confirm_Coupon, LastUse_Date, Coupon_No, Product_ID')
     .or(`Phone_No.eq.${cleanKey},Coupon_No.eq.${cleanKey}`)
     .maybeSingle();
 
@@ -151,7 +162,7 @@ async generateBillNo() {
   if (!data && !error && cleanFallbackPhone) {
     ({ data, error } = await supabase
       .from('Cafe_Amazon_Promosion_House')
-      .select('ID, Name, Phone_No, House_Number, Project_ID, All_Use, All_Limit, Confirm_Coupon, LastUse_Date, Coupon_No, Product_ID')
+      .select('ID, Name, Phone_No, Detail, Remark, All_Use, All_Limit, Confirm_Coupon, LastUse_Date, Coupon_No, Product_ID')
       .eq('Phone_No', cleanFallbackPhone)
       .maybeSingle());
   }
@@ -175,8 +186,8 @@ async generateBillNo() {
     id: data.ID,
     name: data.Name || 'ลูกค้า Cafe Amazon',
     phone: data.Phone_No,
-    address: data.House_Number || '-',
-    project: data.Project_ID || '-', // 2. แมปค่า project เพิ่มตรงนี้
+    address: data.Detail || '-',
+    project: data.Remark || '-',
     usedCount: data.All_Use ?? 0,
     allLimit: data.All_Limit ?? 50,
     confirmCoupon: data.Confirm_Coupon ?? false,
@@ -333,7 +344,7 @@ async getHistory(userPhone) {
     const supabase = getSupabase();
     const { data, error } = await supabase
       .from('Cafe_Amazon_Promosion_House')
-      .select('ID, Name, Phone_No, House_Number, Project_ID, All_Use, All_Limit, Day_Limit, IsUse, Access_Level, Confirm_Coupon, Product_ID')
+      .select('ID, Name, Phone_No, Detail, Remark, All_Use, All_Limit, Day_Limit, IsUse, Access_Level, Confirm_Coupon, Product_ID')
       .order('Name', { ascending: true });
 
     if (error) throw new Error(`ดึงข้อมูลตารางล้มเหลว: ${error.message}`);
@@ -342,8 +353,8 @@ async getHistory(userPhone) {
       id: item.ID,
       name: item.Name || '-',
       phone: item.Phone_No || '-',
-      address: item.House_Number || '-',
-      project: item.Project_ID || '-',
+      address: item.Detail || '-',
+      project: item.Remark || '-',
       usedCount: item.All_Use ?? 0,
       allLimit: item.All_Limit ?? 10,
       quotaPerDay: item.Day_Limit ?? 1, // อ่านค่า Day_Limit จากเบส
@@ -386,8 +397,8 @@ async getHistory(userPhone) {
     const recordData = {
       Name: cleanName,
       Phone_No: cleanPhone,
-      House_Number: cleanString(payload.address),
-      Project_ID: cleanString(payload.project),
+      Detail: cleanString(payload.address),
+      Remark: cleanString(payload.project),
       Day_Limit: dayLimitValue,  // ✅ บันทึกตรงตามค่าที่กรอก (หรือ quotaPerDay)
       Access_Level: Number(payload.accessLevel) === 1 ? 1 : 0,
       IsUse: payload.id ? Boolean(payload.isUse) : false,
