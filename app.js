@@ -397,13 +397,6 @@ async function initializePrinterOnMainScreen() {
   const saved = getSavedPrinter();
   if (!saved) {
     showPrinterStartupDialog('กรุณาตั้งค่าเครื่องพิมพ์จากหน้าจัดการสมาชิกก่อนใช้งาน');
-    return;
-  }
-  try {
-    await connectBluetoothPrinter();
-  } catch (error) {
-    // หลังรีเฟรช PWA ให้เชื่อมต่อเดิมแบบเงียบ ๆ; หากไม่สำเร็จจะค่อยขอเลือกเครื่องเมื่อผู้ใช้กดพิมพ์
-    console.info(`ยังเชื่อมต่อเครื่องพิมพ์ ${saved.name} อัตโนมัติไม่ได้:`, error.message);
   }
 }
 
@@ -653,26 +646,19 @@ async function startScanner() {
 
   if (supportsBluetoothPrinting()) {
     try {
+      const savedPrinter = getSavedPrinter();
+      if (!savedPrinter) throw new Error('ยังไม่ได้ตั้งค่าเครื่องพิมพ์ กรุณาให้แอดมินตั้งค่าก่อน');
+
+      // ครั้งแรกหลังเปิด Staff: ให้ผู้ใช้เลือกเครื่องที่ตั้งไว้ผ่านรายการของ Android/Chrome
+      // ครั้งต่อไปในรอบแอปเดียวกัน ใช้ bluetoothDevice เดิมและเชื่อมต่อแบบเงียบ ๆ
+      if (!bluetoothDevice || bluetoothDevice.id !== savedPrinter.id) {
+        await selectConfiguredPrinter();
+      }
+
       showPrintLoadingDialog('กำลังตรวจสอบการเชื่อมต่อเครื่องพิมพ์...');
       await connectBluetoothPrinter();
     } catch (error) {
-      showAppDialog(`ไม่สามารถเชื่อมต่อเครื่องพิมพ์ได้: ${error.message}`, {
-        title: 'เครื่องพิมพ์',
-        actionLabel: 'เลือกเครื่องพิมพ์',
-        onAction: async () => {
-          try {
-            showPrintLoadingDialog('กำลังเชื่อมต่อเครื่องพิมพ์...');
-            await selectConfiguredPrinter();
-            await connectBluetoothPrinter();
-          } catch (selectError) {
-            showAppDialog(`เชื่อมต่อเครื่องพิมพ์ไม่ได้: ${selectError.message}`, { title: 'เครื่องพิมพ์' });
-            return;
-          } finally {
-            removePrintLoadingDialog();
-          }
-          await startScanner();
-        }
-      });
+      showAppDialog(`ไม่สามารถเชื่อมต่อเครื่องพิมพ์ได้: ${error.message}`, { title: 'เครื่องพิมพ์' });
       return;
     } finally {
       removePrintLoadingDialog();
