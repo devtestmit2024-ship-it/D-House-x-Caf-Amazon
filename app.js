@@ -200,30 +200,6 @@ async function findConfiguredPrinterForAutoConnect(ignoreCachedDevice = false) {
   return device;
 }
 
-// เลือกเครื่องที่ตั้งค่าไว้แบบอัตโนมัติก่อน; เปิดตัวเลือก Bluetooth เฉพาะเมื่อหาเครื่องเดิมไม่พบ
-async function chooseConfiguredPrinterForPrint() {
-  const saved = getSavedPrinter();
-  if (!saved) throw new Error('ยังไม่ได้ตั้งค่าเครื่องพิมพ์ กรุณาตั้งค่าจากหน้าจัดการสมาชิก');
-  if (!navigator.bluetooth) throw new Error('เบราว์เซอร์นี้ไม่รองรับ Web Bluetooth');
-
-  const configuredDevice = await findConfiguredPrinterForAutoConnect();
-  if (configuredDevice) return configuredDevice;
-
-  const hasSpecificName = saved.name && saved.name !== 'Bluetooth Printer';
-  const options = hasSpecificName
-    ? { filters: [{ name: saved.name }], optionalServices: PRINTER_SERVICES }
-    : { acceptAllDevices: true, optionalServices: PRINTER_SERVICES };
-
-  const selectedDevice = await navigator.bluetooth.requestDevice(options);
-  if (selectedDevice.id !== saved.id) {
-    try { selectedDevice.gatt?.disconnect(); } catch (e) {}
-    throw new Error(`กรุณาเลือกเครื่องพิมพ์ที่ตั้งค่าไว้ (${saved.name}) เท่านั้น`);
-  }
-
-  bluetoothDevice = selectedDevice;
-  return selectedDevice;
-}
-
 function forgetPrinter() {
   try { bluetoothDevice?.gatt?.disconnect(); } catch (e) {}
   bluetoothDevice = null;
@@ -248,7 +224,7 @@ async function disconnectBluetoothPrinter() {
   return device;
 }
 
-async function connectBluetoothPrinter({ forceReconnect = false, retryCount = 3 } = {}) {
+async function connectBluetoothPrinter({ forceReconnect = false, retryCount = 1 } = {}) {
   if (!navigator.bluetooth) throw new Error('เบราว์เซอร์นี้ไม่รองรับ Web Bluetooth');
   if (!window.isSecureContext) throw new Error('Web Bluetooth ต้องเปิดผ่าน HTTPS เท่านั้น');
 
@@ -528,8 +504,8 @@ async function printReceiptESC_POS(characteristic, lines) {
 }
 
 async function runPrint(data, billNo) {
-  // อย่าใช้ผลการเชื่อมต่อครั้งก่อน โดยเฉพาะกรณีเปิดเครื่องพิมพ์หลังเคยเชื่อมต่อไม่สำเร็จ
-  const characteristic = await connectBluetoothPrinter({ forceReconnect: true });
+  // ใช้เฉพาะเครื่องที่ตั้งค่าไว้ และไม่เปิดตัวเลือก Bluetooth ระหว่างการพิมพ์
+  const characteristic = await connectBluetoothPrinter();
   const receipts = createReceiptLines(data, billNo);
 
   await printReceiptESC_POS(characteristic, receipts.original);
@@ -543,10 +519,8 @@ async function printTestReceipt() {
   }
 
   try {
-    // ต้องเรียกจาก click โดยตรง เพื่อให้ Chrome เปิดตัวเลือก Bluetooth ได้
-    await chooseConfiguredPrinterForPrint();
     showPrintLoadingDialog('กำลังตรวจสอบและส่งใบเสร็จทดสอบ...');
-    const characteristic = await connectBluetoothPrinter({ forceReconnect: true });
+    const characteristic = await connectBluetoothPrinter();
     const testData = {
       name: 'ทดสอบระบบ',
       phone: '-',
@@ -870,15 +844,6 @@ function renderClientDetailPage(data) {
       // ตรวจอีกครั้งก่อนสร้างบิลหรือสั่งพิมพ์ เผื่อคูปองหมดอายุระหว่างเปิดหน้านี้
       if (isCouponExpired(data.couponExpiresAt)) {
         alert('คูปองหมดอายุแล้ว กรุณาให้ลูกค้าสร้างคูปองใหม่');
-        return;
-      }
-
-      // ให้ผู้ใช้ยืนยันเครื่องที่ตั้งค่าไว้ก่อน (จำเป็นสำหรับ Chrome ที่ไม่มี getDevices)
-      try {
-        await chooseConfiguredPrinterForPrint();
-      } catch (err) {
-        const errorMessage = String(err?.message ?? '').trim() || 'ไม่สามารถเลือกเครื่องพิมพ์ได้';
-        alert(`⚠️ ไม่สามารถเลือกเครื่องพิมพ์: ${errorMessage}`);
         return;
       }
 
