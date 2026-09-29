@@ -390,9 +390,9 @@ async function initializePrinterOnMainScreen() {
   }
   try {
     await connectBluetoothPrinter();
-    showToast(`พร้อมใช้งานเครื่องพิมพ์: ${saved.name}`);
   } catch (error) {
-    showPrinterStartupDialog(`ไม่สามารถเชื่อมต่อเครื่องพิมพ์ ${saved.name} อัตโนมัติได้\nกรุณาเลือกเครื่องเดิมเพื่อเชื่อมต่อ`, { allowSelect: true });
+    // หลังรีเฟรช PWA ให้เชื่อมต่อเดิมแบบเงียบ ๆ; หากไม่สำเร็จจะค่อยขอเลือกเครื่องเมื่อผู้ใช้กดพิมพ์
+    console.info(`ยังเชื่อมต่อเครื่องพิมพ์ ${saved.name} อัตโนมัติไม่ได้:`, error.message);
   }
 }
 
