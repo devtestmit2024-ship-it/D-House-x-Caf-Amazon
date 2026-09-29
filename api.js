@@ -59,6 +59,32 @@ function cleanString(val) {
   return String(val || '').trim();
 }
 
+const STAFF_PENDING_USAGE_RELEASE_KEY = 'staff-pending-isuse-release';
+function queueStaffUsageRelease(phone) {
+  if (phone) localStorage.setItem(STAFF_PENDING_USAGE_RELEASE_KEY, cleanString(phone));
+}
+
+async function updateStaffUsage(phone, isUse, { keepalive = false } = {}) {
+  const cleanPhone = cleanString(phone);
+  if (!cleanPhone) return;
+  const payload = { IsUse: isUse, UpdateDate: new Date().toISOString() };
+  if (keepalive) {
+    const endpoint = `${window.SUPABASE_URL}/rest/v1/Cafe_Amazon_Promosion_House?Phone_No=eq.${encodeURIComponent(cleanPhone)}`;
+    const response = await nativeFetch(endpoint, {
+      method: 'PATCH',
+      headers: { apikey: window.SUPABASE_KEY, Authorization: `Bearer ${window.SUPABASE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify(payload), keepalive: true
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return;
+  }
+  const { error } = await getSupabase()
+    .from('Cafe_Amazon_Promosion_House')
+    .update(payload)
+    .eq('Phone_No', cleanPhone);
+  if (error) throw error;
+}
+
 /**
  * แผนที่รายการสินค้า (Product Map)
  */
@@ -69,6 +95,23 @@ const PRODUCT_MAP = {
 };
 
 window.staffApi = {
+  async releaseUserUsage(phone, { keepalive = false } = {}) {
+    const cleanPhone = cleanString(phone);
+    try {
+      await updateStaffUsage(cleanPhone, false, { keepalive });
+      localStorage.removeItem(STAFF_PENDING_USAGE_RELEASE_KEY);
+    } catch (error) {
+      queueStaffUsageRelease(cleanPhone);
+      throw error;
+    }
+  },
+
+  async restoreUserUsage(phone) {
+    const cleanPhone = cleanString(phone);
+    await updateStaffUsage(cleanPhone, true);
+    localStorage.removeItem(STAFF_PENDING_USAGE_RELEASE_KEY);
+  },
+
   /** ตรวจว่ามีบัญชีผู้ดูแลสำหรับเปิดหน้าจัดการสมาชิกแล้วหรือไม่ */
   async hasAdminUser() {
     const { data, error } = await getSupabase()
@@ -102,6 +145,8 @@ window.staffApi = {
 
     if (error) throw new Error(`ตรวจสอบสิทธิ์ไม่สำเร็จ: ${error.message}`);
     if (!data) throw new Error('User หรือ Password ไม่ถูกต้อง หรือบัญชีนี้ไม่มีสิทธิ์แอดมิน');
+
+    await updateStaffUsage(data.Phone_No, true);
 
     return { id: data.ID, name: data.Name, username: data.Phone_No, accessLevel: data.Access_Level };
   },

@@ -88,8 +88,29 @@ function showToast(msg) {
 
 // เปลี่ยน alert เดิมทั้งหมดให้เป็น Dialog ของแอป เพื่อไม่ให้ข้อความหายเร็วหรือถูกเบราว์เซอร์ปิดกั้น
 window.alert = message => showAppDialog(message, { title: 'แจ้งเตือน' });
-window.addEventListener('offline', () => showAppDialog('เชื่อมต่อ Internet ไม่ได้ กรุณาตรวจสอบหรือเชื่อมต่อ Internet แล้วลองอีกครั้ง', { title: 'Internet' }));
-window.addEventListener('online', () => showToast('เชื่อมต่อ Internet แล้ว'));
+function releaseStaffUsageOnDisconnect() {
+  const phone = adminSession?.username;
+  if (phone && window.staffApi?.releaseUserUsage) {
+    window.staffApi.releaseUserUsage(phone, { keepalive: true }).catch(() => {});
+  }
+}
+window.addEventListener('offline', () => {
+  showAppDialog('เชื่อมต่อ Internet ไม่ได้ กรุณาตรวจสอบหรือเชื่อมต่อ Internet แล้วลองอีกครั้ง', { title: 'Internet' });
+  releaseStaffUsageOnDisconnect();
+});
+window.addEventListener('pagehide', releaseStaffUsageOnDisconnect);
+window.addEventListener('beforeunload', releaseStaffUsageOnDisconnect);
+window.addEventListener('online', async () => {
+  showToast('เชื่อมต่อ Internet แล้ว');
+  const phone = adminSession?.username;
+  if (!phone || !window.staffApi) return;
+  try {
+    await window.staffApi.releaseUserUsage(phone);
+    await window.staffApi.restoreUserUsage(phone);
+  } catch (error) {
+    console.warn('ไม่สามารถคืนสถานะ IsUse หลังเชื่อมต่อ Internet:', error);
+  }
+});
 
 let installGuideShown = false;
 const INSTALL_GUIDE_DISMISSED_KEY = 'staff-pwa-install-guide-dismissed';
