@@ -7,6 +7,7 @@ let currentHouseDataList = [];
 let adminSession = null;
 let isProcessingScan = false;
 let screenWakeLock = null;
+let printerStartupChecked = false;
 
 // กันหน้าจอดับขณะใช้งาน Staff เพื่อไม่ให้ Bluetooth/การสแกนถูกระบบพักการทำงาน
 async function keepStaffScreenAwake() {
@@ -53,12 +54,36 @@ function maskPhoneNumber(phone) {
   return str.slice(0, -4) + 'xxxx';
 }
 
-function showToast(msg) {
-  const toast = document.querySelector('#toast') || createToastEl();
-  toast.textContent = msg;
-  toast.classList.add('show');
-  setTimeout(() => toast.classList.remove('show'), 3000);
+let appDialogTimer = null;
+function showAppDialog(message, { title = 'แจ้งเตือน', autoCloseMs = 0, actionLabel = 'ปิด', onAction = null } = {}) {
+  clearTimeout(appDialogTimer);
+  document.querySelector('#app-message-dialog')?.remove();
+  document.body.insertAdjacentHTML('beforeend', `
+    <div id="app-message-dialog" style="position:fixed; inset:0; z-index:50000; display:grid; place-items:center; padding:20px; background:rgba(15,23,42,.55);">
+      <section role="dialog" aria-modal="true" aria-labelledby="app-message-title" style="width:min(100%,360px); padding:22px; border-radius:18px; background:#fff; color:#1e293b; box-shadow:0 20px 45px rgba(0,0,0,.28); text-align:center;">
+        <h2 id="app-message-title" style="margin:0 0 10px; color:#194832; font-size:1.2rem;">${esc(title)}</h2>
+        <p style="margin:0 0 18px; white-space:pre-line; line-height:1.55; color:#475569;">${esc(message)}</p>
+        <button id="btn-close-app-message" type="button" style="padding:10px 16px; border:0; border-radius:10px; background:#256b45; color:#fff; font-weight:700;">${esc(actionLabel)}</button>
+      </section>
+    </div>`);
+  const dialog = document.querySelector('#app-message-dialog');
+  const close = () => {
+    clearTimeout(appDialogTimer);
+    dialog?.remove();
+  };
+  document.querySelector('#btn-close-app-message').onclick = () => {
+    close();
+    onAction?.();
+  };
+  if (autoCloseMs > 0) appDialogTimer = setTimeout(close, autoCloseMs);
 }
+
+function showToast(msg) {
+  showAppDialog(msg, { autoCloseMs: 3000 });
+}
+
+// เปลี่ยน alert เดิมทั้งหมดให้เป็น Dialog ของแอป เพื่อไม่ให้ข้อความหายเร็วหรือถูกเบราว์เซอร์ปิดกั้น
+window.alert = message => showAppDialog(message, { title: 'แจ้งเตือน' });
 
 let installGuideShown = false;
 const INSTALL_GUIDE_DISMISSED_KEY = 'staff-pwa-install-guide-dismissed';
@@ -200,6 +225,36 @@ async function findConfiguredPrinterForAutoConnect(ignoreCachedDevice = false) {
   return device;
 }
 
+// เรียกเฉพาะจากการกดปุ่มของผู้ใช้: ใช้เมื่อเครื่องเดิมยังคืนให้ Web Bluetooth ไม่ได้
+async function selectConfiguredPrinter() {
+  const saved = getSavedPrinter();
+  if (!saved) throw new Error('ยังไม่ได้ตั้งค่าเครื่องพิมพ์ กรุณาให้แอดมินตั้งค่าก่อน');
+  const options = saved.name && saved.name !== 'Bluetooth Printer'
+    ? { filters: [{ name: saved.name }], optionalServices: PRINTER_SERVICES }
+    : { acceptAllDevices: true, optionalServices: PRINTER_SERVICES };
+  const device = await navigator.bluetooth.requestDevice(options);
+  if (device.id !== saved.id) {
+    throw new Error(`กรุณาเลือกเครื่องที่ตั้งค่าไว้ (${saved.name}) เท่านั้น`);
+  }
+  bluetoothDevice = device;
+  bluetoothCharacteristic = null;
+  return device;
+}
+
+// พยายามใช้เครื่องเดิมก่อนเสมอ; จะเปิดตัวเลือกเฉพาะเมื่อเรียกจากปุ่มที่ผู้ใช้กดและเชื่อมต่อเดิมไม่ได้
+async function ensurePrinterReadyFromUserAction() {
+  try {
+    return await connectBluetoothPrinter();
+  } catch (firstError) {
+    await selectConfiguredPrinter();
+    try {
+      return await connectBluetoothPrinter();
+    } catch (secondError) {
+      throw new Error(secondError.message || firstError.message);
+    }
+  }
+}
+
 function forgetPrinter() {
   try { bluetoothDevice?.gatt?.disconnect(); } catch (e) {}
   bluetoothDevice = null;
@@ -305,6 +360,39 @@ async function configureBluetoothPrinter() {
   } catch (error) {
     forgetPrinter();
     throw new Error(`เชื่อมต่อเครื่องพิมพ์ไม่ได้: ${error.message}`);
+  }
+}
+
+function showPrinterStartupDialog(message, { allowSelect = false } = {}) {
+  showAppDialog(message, {
+    title: 'เครื่องพิมพ์',
+    actionLabel: allowSelect ? 'เลือกเครื่องพิมพ์' : 'รับทราบ',
+    onAction: allowSelect ? async () => {
+      try {
+        showPrintLoadingDialog('กำลังเชื่อมต่อเครื่องพิมพ์...');
+        await selectConfiguredPrinter();
+        await connectBluetoothPrinter();
+        showToast('เชื่อมต่อเครื่องพิมพ์เรียบร้อยแล้ว');
+      } catch (error) {
+        showAppDialog(`เชื่อมต่อเครื่องพิมพ์ไม่ได้: ${error.message}`, { title: 'เครื่องพิมพ์' });
+      } finally {
+        removePrintLoadingDialog();
+      }
+    } : null
+  });
+}
+
+async function initializePrinterOnMainScreen() {
+  const saved = getSavedPrinter();
+  if (!saved) {
+    showPrinterStartupDialog('กรุณาตั้งค่าเครื่องพิมพ์จากหน้าจัดการสมาชิกก่อนใช้งาน');
+    return;
+  }
+  try {
+    await connectBluetoothPrinter();
+    showToast(`พร้อมใช้งานเครื่องพิมพ์: ${saved.name}`);
+  } catch (error) {
+    showPrinterStartupDialog(`ไม่สามารถเชื่อมต่อเครื่องพิมพ์ ${saved.name} อัตโนมัติได้\nกรุณาเลือกเครื่องเดิมเพื่อเชื่อมต่อ`, { allowSelect: true });
   }
 }
 
@@ -519,6 +607,8 @@ async function printTestReceipt() {
   }
 
   try {
+    // ต้องทำก่อนเปิด Dialog รอ เพื่อให้ตัวเลือก Bluetooth ของระบบไม่ถูกบัง
+    await ensurePrinterReadyFromUserAction();
     showPrintLoadingDialog('กำลังตรวจสอบและส่งใบเสร็จทดสอบ...');
     const characteristic = await connectBluetoothPrinter();
     const testData = {
@@ -661,9 +751,11 @@ function showPrintLoadingDialog(msg = 'กำลังพิมพ์ใบเ�
         <div class="spinner" style="border:4px solid #f3f3f3; border-top:4px solid #059669; border-radius:50%; width:48px; height:48px; animation:spin 1s linear infinite; margin:0 auto 1.25rem auto;"></div>
         <h3 id="print-dialog-msg" style="margin:0 0 0.5rem 0; font-size:1.1rem; color:#059669;">🖨️ กำลังดำเนินการ</h3>
         <p id="print-dialog-sub" style="margin:0; font-size:0.9rem; color:#64748b;">${esc(msg)}</p>
+        <div aria-label="กำลังทำงาน" style="height:7px; margin-top:16px; overflow:hidden; border-radius:999px; background:#dbeafe;"><div style="width:45%; height:100%; border-radius:inherit; background:#059669; animation:loading-progress 1.1s ease-in-out infinite alternate;"></div></div>
       </div>
       <style>
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes loading-progress { from { transform:translateX(-80%); } to { transform:translateX(210%); } }
       </style>
     </div>
   `;
@@ -847,6 +939,17 @@ function renderClientDetailPage(data) {
         return;
       }
 
+      const useAirPrint = !supportsBluetoothPrinting();
+      if (!useAirPrint) {
+        try {
+          // ต้องทำก่อนเปิด Dialog รอ เพื่อให้ตัวเลือก Bluetooth ของระบบไม่ถูกบัง
+          await ensurePrinterReadyFromUserAction();
+        } catch (error) {
+          showAppDialog(`เชื่อมต่อเครื่องพิมพ์ไม่ได้: ${error.message}`, { title: 'เครื่องพิมพ์' });
+          return;
+        }
+      }
+
       showPrintLoadingDialog('กำลังตรวจสอบสถานะคูปอง...');
 
       try {
@@ -855,8 +958,6 @@ function renderClientDetailPage(data) {
 
         updatePrintLoadingMessage('กำลังสร้างเลขบิล...');
         const generatedBillNo = await window.staffApi.generateBillNo();
-        const useAirPrint = !supportsBluetoothPrinting();
-
         if (!useAirPrint) {
           updatePrintLoadingMessage('กำลังส่งสั่งพิมพ์ไปยังเครื่องพิมพ์ Bluetooth...');
           await runPrint(data, generatedBillNo);
@@ -1438,6 +1539,10 @@ function renderMainUI() {
   document.querySelector('#btn-test-print').onclick = printTestReceipt;
 
   setTimeout(showInstallGuide, 400);
+  if (!printerStartupChecked) {
+    printerStartupChecked = true;
+    setTimeout(initializePrinterOnMainScreen, 700);
+  }
 }
 
 // โหลดหน้าจอหลักเมื่อเริ่มต้น
