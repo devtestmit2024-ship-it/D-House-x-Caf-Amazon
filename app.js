@@ -496,8 +496,8 @@ function createReceiptLines(data, billNo) {
   const now = new Date().toLocaleString('th-TH');
   const displayName = formatCustomerName(data.name);
 
-  const buildBlock = (typeTitle) => [
-    { text: 'D House x Café Amazon', align: 'center', bold: true },
+  const buildBlock = (typeTitle, headerTitle = 'D House x Café Amazon') => [
+    { text: headerTitle, align: 'center', bold: true },
     { text: `${typeTitle}`, align: 'center', bold: true },
     { text: `${now}` },
     { 
@@ -518,7 +518,7 @@ function createReceiptLines(data, billNo) {
 
   return {
     original: buildBlock(''),
-    copy: buildBlock('(ร้านค้าเก็บ)')
+    copy: buildBlock('(ร้านค้าเก็บ)', 'D House x Café Amazon o')
   };
 }
 
