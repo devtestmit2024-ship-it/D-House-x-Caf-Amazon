@@ -84,6 +84,8 @@ function showToast(msg) {
 
 // เปลี่ยน alert เดิมทั้งหมดให้เป็น Dialog ของแอป เพื่อไม่ให้ข้อความหายเร็วหรือถูกเบราว์เซอร์ปิดกั้น
 window.alert = message => showAppDialog(message, { title: 'แจ้งเตือน' });
+window.addEventListener('offline', () => showAppDialog('เชื่อมต่อ Internet ไม่ได้ กรุณาตรวจสอบหรือเชื่อมต่อ Internet แล้วลองอีกครั้ง', { title: 'Internet' }));
+window.addEventListener('online', () => showToast('เชื่อมต่อ Internet แล้ว'));
 
 let installGuideShown = false;
 const INSTALL_GUIDE_DISMISSED_KEY = 'staff-pwa-install-guide-dismissed';
@@ -640,6 +642,18 @@ async function startScanner() {
   const scannerStatus = document.querySelector('#scanner-status');
   if (!readerEl) return;
 
+  if (supportsBluetoothPrinting()) {
+    try {
+      showPrintLoadingDialog('กำลังตรวจสอบการเชื่อมต่อเครื่องพิมพ์...');
+      await connectBluetoothPrinter();
+    } catch (error) {
+      showAppDialog(`ไม่สามารถเชื่อมต่อเครื่องพิมพ์ได้: ${error.message}`, { title: 'เครื่องพิมพ์' });
+      return;
+    } finally {
+      removePrintLoadingDialog();
+    }
+  }
+
   isProcessingScan = false;
   readerEl.style.display = 'block';
   if (manageButton) manageButton.style.display = 'none';
@@ -849,12 +863,20 @@ async function processPhoneQuery(phone, scannedProductId = null, expiresAt = nul
       await window.staffApi.checkCouponInfo(phone, memberPhone),
       scannedProductId
     );
+    if (!data.productId || !data.productName || data.productName === 'ไม่ได้เลือกสินค้า') {
+      throw new Error('QR_PRODUCT_NOT_FOUND');
+    }
     data.couponExpiresAt = expiresAt;
     removePrintLoadingDialog();
     renderClientDetailPage(data);
   } catch (err) {
     removePrintLoadingDialog();
-    alert('เกิดข้อผิดพลาด: ' + err.message);
+    const message = String(err?.message || '');
+    if (message.includes('QR_PRODUCT_NOT_FOUND') || message.includes('ไม่พบข้อมูลสมาชิก') || message.includes('ไม่พบคูปอง') || message.includes('ไม่ได้เลือกสินค้า')) {
+      alert('ไม่พบ QR Code กรุณาตรวจสอบ QR แล้วลองอีกครั้ง');
+    } else {
+      alert('เกิดข้อผิดพลาด: ' + message);
+    }
   }
 }
 

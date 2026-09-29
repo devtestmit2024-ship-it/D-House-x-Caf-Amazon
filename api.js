@@ -1,5 +1,44 @@
 // api.js (ระบบพนักงานขาย - Supabase Integration)
 
+const INTERNET_ERROR_MESSAGE = 'เชื่อมต่อ Internet ไม่ได้ กรุณาตรวจสอบหรือเชื่อมต่อ Internet แล้วลองอีกครั้ง';
+const nativeFetch = window.fetch.bind(window);
+let lastInternetCheckAt = 0;
+let lastInternetCheckPassed = true;
+
+// ตรวจสอบก่อนเรียกข้อมูล และทดสอบซ้ำอย่างน้อยทุก 5 วินาที
+async function ensureInternetConnection() {
+  if (!navigator.onLine) throw new Error(INTERNET_ERROR_MESSAGE);
+  const now = Date.now();
+  if (now - lastInternetCheckAt < 5000) {
+    if (!lastInternetCheckPassed) throw new Error(INTERNET_ERROR_MESSAGE);
+    return true;
+  }
+  lastInternetCheckAt = now;
+  try {
+    // HTTP สถานะใด ๆ หมายถึงเข้าถึง Supabase ได้; การ reject เท่านั้นคือเชื่อมต่อไม่ได้
+    await nativeFetch(`${window.SUPABASE_URL}/rest/v1/`, {
+      method: 'HEAD', cache: 'no-store', headers: { apikey: window.SUPABASE_KEY }
+    });
+    lastInternetCheckPassed = true;
+    return true;
+  } catch (error) {
+    lastInternetCheckPassed = false;
+    throw new Error(INTERNET_ERROR_MESSAGE);
+  }
+}
+
+async function onlineFetch(...args) {
+  await ensureInternetConnection();
+  try {
+    return await nativeFetch(...args);
+  } catch (error) {
+    throw new Error(INTERNET_ERROR_MESSAGE);
+  }
+}
+
+window.ensureInternetConnection = ensureInternetConnection;
+setInterval(() => ensureInternetConnection().catch(() => {}), 5000);
+
 /**
  * ฟังก์ชันสร้าง/ดึง Client Instance ของ Supabase
  */
@@ -8,7 +47,7 @@ function getSupabase() {
     throw new Error('ระบบยังโหลด Supabase SDK ไม่สมบูรณ์ กรุณาลองใหม่อีกครั้ง');
   }
   if (!window._supabaseInstance) {
-    window._supabaseInstance = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_KEY);
+    window._supabaseInstance = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_KEY, { global: { fetch: onlineFetch } });
   }
   return window._supabaseInstance;
 }
