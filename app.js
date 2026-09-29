@@ -417,7 +417,7 @@ function showPrinterStartupDialog(message, { allowSelect = false } = {}) {
 async function initializePrinterOnMainScreen() {
   const saved = getSavedPrinter();
   if (!saved) {
-    showPrinterStartupDialog('กรุณาตั้งค่าเครื่องพิมพ์จากหน้าจัดการสมาชิกก่อนใช้งาน');
+    showPrinterStartupDialog('ยังไม่ได้ตั้งค่าเครื่องพิมพ์ คุณยังใช้งานระบบได้ แต่การยืนยันใช้สิทธิ์จะออกใบเสร็จแบบไม่พิมพ์');
   }
 }
 
@@ -518,7 +518,7 @@ function createReceiptLines(data, billNo) {
 
   return {
     original: buildBlock(''),
-    copy: buildBlock('(ร้านค้าเก็บ)', 'D House x Café Amazon o')
+    copy: buildBlock('(ร้านค้าเก็บ)', 'D House x Café Amazon ●')
   };
 }
 
@@ -662,22 +662,27 @@ async function startScanner() {
   const btn = document.querySelector('#btn-toggle-camera');
   const manageButton = document.querySelector('#btn-manage-member');
   const testPrintButton = document.querySelector('#btn-test-print');
+  const salesReportButton = document.querySelector('#btn-sales-report');
   const scannerStatus = document.querySelector('#scanner-status');
   if (!readerEl) return;
 
   if (supportsBluetoothPrinting()) {
     try {
       const savedPrinter = getSavedPrinter();
-      if (!savedPrinter) throw new Error('ยังไม่ได้ตั้งค่าเครื่องพิมพ์ กรุณาให้แอดมินตั้งค่าก่อน');
+      // ยังไม่มีเครื่องพิมพ์: ใช้งานสแกนและออกใบเสร็จแบบไม่พิมพ์ได้
+      if (!savedPrinter) {
+        showToast('ยังไม่ได้ตั้งค่าเครื่องพิมพ์ การทำรายการนี้สามารถเลือกออกใบเสร็จแบบไม่พิมพ์ได้');
+      } else {
 
-      // ครั้งแรกหลังเปิด Staff: ให้ผู้ใช้เลือกเครื่องที่ตั้งไว้ผ่านรายการของ Android/Chrome
-      // ครั้งต่อไปในรอบแอปเดียวกัน ใช้ bluetoothDevice เดิมและเชื่อมต่อแบบเงียบ ๆ
-      if (!bluetoothDevice || bluetoothDevice.id !== savedPrinter.id) {
-        await selectConfiguredPrinter();
+        // ครั้งแรกหลังเปิด Staff: ให้ผู้ใช้เลือกเครื่องที่ตั้งไว้ผ่านรายการของ Android/Chrome
+        // ครั้งต่อไปในรอบแอปเดียวกัน ใช้ bluetoothDevice เดิมและเชื่อมต่อแบบเงียบ ๆ
+        if (!bluetoothDevice || bluetoothDevice.id !== savedPrinter.id) {
+          await selectConfiguredPrinter();
+        }
+
+        showPrintLoadingDialog('กำลังตรวจสอบการเชื่อมต่อเครื่องพิมพ์...');
+        await connectBluetoothPrinter();
       }
-
-      showPrintLoadingDialog('กำลังตรวจสอบการเชื่อมต่อเครื่องพิมพ์...');
-      await connectBluetoothPrinter();
     } catch (error) {
       showAppDialog(`ไม่สามารถเชื่อมต่อเครื่องพิมพ์ได้: ${error.message}`, { title: 'เครื่องพิมพ์' });
       return;
@@ -690,6 +695,7 @@ async function startScanner() {
   readerEl.style.display = 'block';
   if (manageButton) manageButton.style.display = 'none';
   if (testPrintButton) testPrintButton.style.display = 'none';
+  if (salesReportButton) salesReportButton.style.display = 'none';
   if (scannerStatus) scannerStatus.textContent = 'เล็ง QR Code ให้อยู่ในกรอบ กล้องจะอ่านให้อัตโนมัติ';
   if (btn) {
     btn.textContent = '❌ ปิดกล้องสแกน';
@@ -770,6 +776,7 @@ async function stopScanner() {
   const btn = document.querySelector('#btn-toggle-camera');
   const manageButton = document.querySelector('#btn-manage-member');
   const testPrintButton = document.querySelector('#btn-test-print');
+  const salesReportButton = document.querySelector('#btn-sales-report');
   const scannerStatus = document.querySelector('#scanner-status');
 
   if (html5QrCode && html5QrCode.isScanning) {
@@ -781,6 +788,7 @@ async function stopScanner() {
   if (readerEl) readerEl.style.display = 'none';
   if (manageButton) manageButton.style.display = 'flex';
   if (testPrintButton) testPrintButton.style.display = 'block';
+  if (salesReportButton) salesReportButton.style.display = 'block';
   if (scannerStatus) scannerStatus.textContent = '';
   if (btn) {
     btn.textContent = '📷 เปิดกล้องสแกน QR Code';
@@ -877,6 +885,64 @@ function renderAirPrintReceipt(data, billNo) {
   document.querySelector('#btn-airprint').onclick = () => window.print();
 }
 
+function getLocalDateValue(date = new Date()) {
+  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return offsetDate.toISOString().slice(0, 10);
+}
+
+async function openSalesReport(dateValue = getLocalDateValue()) {
+  app.classList.add('member-management-screen');
+  app.innerHTML = `
+    <div id="sales-report-modal" class="staff-page" style="min-height:100vh; color:#1e293b;">
+      <div style="padding:1rem; background:#fff; border-bottom:1px solid #cbd5e1; display:flex; align-items:center; gap:.5rem; z-index:10;">
+        <button class="back" id="btn-close-sales-report" type="button" aria-label="กลับ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
+        <h3 style="margin:0; font-size:1.1rem; color:#0284c7;">📊 รายงานการขาย</h3>
+      </div>
+      <main style="flex:1; max-width:1000px; width:100%; margin:0 auto; padding:20px; box-sizing:border-box;">
+        <section style="padding:16px; border:1px solid #cbd5e1; border-radius:12px; background:#fff; box-shadow:0 4px 6px -1px rgba(0,0,0,.05);">
+          <label for="sales-report-date" style="display:block; margin-bottom:8px; font-weight:700;">เลือกวันที่</label>
+          <div style="display:flex; gap:8px; margin-bottom:16px;">
+            <input id="sales-report-date" type="date" value="${esc(dateValue)}" style="flex:1; min-width:0; padding:10px; border:1px solid #cbd5e1; border-radius:8px; font:inherit;">
+            <button id="btn-refresh-sales-report" type="button" style="padding:10px 14px; border:0; border-radius:8px; background:#0284c7; color:#fff; font-weight:700;">แสดงรายงาน</button>
+          </div>
+          <div id="sales-report-content" aria-live="polite"></div>
+        </section>
+      </main>
+    </div>`;
+
+  document.querySelector('#btn-close-sales-report').onclick = renderMainUI;
+  const loadReport = async () => {
+    const selectedDate = document.querySelector('#sales-report-date').value;
+    const content = document.querySelector('#sales-report-content');
+    content.innerHTML = '<p style="text-align:center; color:#64748b;">กำลังโหลดรายงาน...</p>';
+    try {
+      const bills = await window.staffApi.getSalesReport(selectedDate);
+      const total = bills.reduce((sum, bill) => sum + Number(bill.Price || 0) - Number(bill.Discount || 0), 0);
+      content.innerHTML = `
+        <div style="display:flex; justify-content:space-between; gap:12px; margin-bottom:12px; padding:12px; background:#ecfdf5; border-radius:10px; color:#065f46; font-weight:700;">
+          <span>${bills.length} รายการ</span><span>ยอดขาย ฿${total.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+        </div>
+        ${bills.length ? `<div style="display:grid; gap:10px;">${bills.map(bill => `
+          <article style="padding:13px; border:1px solid #e2e8f0; border-radius:10px; background:#fff; display:flex; gap:12px; align-items:center;">
+            ${bill.productImage
+              ? `<img src="${esc(bill.productImage)}" alt="${esc(bill.productName)}" style="width:64px; height:64px; flex:0 0 64px; object-fit:cover; border-radius:10px; border:1px solid #e2e8f0; background:#f8fafc;" onerror="this.style.display='none'">`
+              : '<div aria-hidden="true" style="width:64px; height:64px; flex:0 0 64px; display:grid; place-items:center; border-radius:10px; background:#f1f5f9; font-size:28px;">☕</div>'}
+            <div style="min-width:0; flex:1;">
+              <div style="display:flex; justify-content:space-between; gap:12px; font-weight:700;"><span>${esc(bill.Bill_No || '-')}</span><span>฿${Number(bill.Price || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+              <div style="margin-top:5px; color:#334155;">${esc(bill.productName || '-')}</div>
+              <div style="margin-top:5px; color:#64748b; font-size:.86rem;">${bill.InsertDate ? new Date(bill.InsertDate).toLocaleString('th-TH') : '-'}${bill.Coupon_No ? ` · คูปอง ${esc(bill.Coupon_No)}` : ''}</div>
+            </div>
+          </article>`).join('')}</div>` : '<p style="padding:24px; text-align:center; color:#64748b; background:#fff; border-radius:10px;">ไม่พบรายการขายในวันที่เลือก</p>'}`;
+    } catch (error) {
+      content.innerHTML = '';
+      showAppDialog(error.message || 'ไม่สามารถโหลดรายงานการขายได้', { title: 'รายงานการขาย' });
+    }
+  };
+  document.querySelector('#btn-refresh-sales-report').onclick = loadReport;
+  document.querySelector('#sales-report-date').onchange = loadReport;
+  await loadReport();
+}
+
 function isCouponExpired(expiresAt) {
   const value = Number(expiresAt);
   if (!Number.isFinite(value) || value <= 0) return false;
@@ -961,9 +1027,10 @@ function renderClientDetailPage(data) {
           <div style="margin-top:1.25rem; display:flex; flex-direction:column; gap:0.6rem;">
             ${
               hasCouponOrProduct
-                ? `<button id="btn-confirm-redeem" style="width:100%; padding:0.9rem; background:#059669; color:#fff; border:none; border-radius:8px; font-size:1rem; font-weight:bold; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.1);">
-                    🖨️ ยืนยันใช้สิทธิ์ / พิมพ์ใบเสร็จ
-                  </button>`
+                ? `<div style="display:flex; gap:.6rem;">
+                    <button id="btn-confirm-redeem" style="flex:1; padding:0.9rem; background:#059669; color:#fff; border:none; border-radius:8px; font-size:1rem; font-weight:bold; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.1);">🖨️ พิมพ์ใบเสร็จ</button>
+                    <button id="btn-confirm-no-print" style="padding:.9rem; background:#64748b; color:#fff; border:none; border-radius:8px; font-size:.95rem; font-weight:bold; cursor:pointer;">ไม่พิมพ์</button>
+                  </div>`
                 : `<div style="background:#fffbebe6; color:#b45309; padding:0.75rem; border-radius:8px; text-align:center; font-size:0.9rem; border:1px solid #fef3c7;">
                     ⚠️ ไม่พบคูปองหรือสินค้าที่เปิดใช้งานในขณะนี้ (ไม่สามารถพิมพ์ใบเสร็จได้)
                   </div>`
@@ -986,15 +1053,15 @@ function renderClientDetailPage(data) {
   };
 
   if (hasCouponOrProduct) {
-    document.querySelector('#btn-confirm-redeem')?.addEventListener('click', async () => {
+    const confirmRedeem = async (withoutPrinting = false) => {
       // ตรวจอีกครั้งก่อนสร้างบิลหรือสั่งพิมพ์ เผื่อคูปองหมดอายุระหว่างเปิดหน้านี้
       if (isCouponExpired(data.couponExpiresAt)) {
         alert('คูปองหมดอายุแล้ว กรุณาให้ลูกค้าสร้างคูปองใหม่');
         return;
       }
 
-      const useAirPrint = !supportsBluetoothPrinting();
-      if (!useAirPrint) {
+      const useAirPrint = !withoutPrinting && !supportsBluetoothPrinting();
+      if (!withoutPrinting && !useAirPrint) {
         try {
           // ต้องทำก่อนเปิด Dialog รอ เพื่อให้ตัวเลือก Bluetooth ของระบบไม่ถูกบัง
           await ensurePrinterReadyFromUserAction();
@@ -1012,7 +1079,7 @@ function renderClientDetailPage(data) {
 
         updatePrintLoadingMessage('กำลังสร้างเลขบิล...');
         const generatedBillNo = await window.staffApi.generateBillNo();
-        if (!useAirPrint) {
+        if (!withoutPrinting && !useAirPrint) {
           updatePrintLoadingMessage('กำลังส่งสั่งพิมพ์ไปยังเครื่องพิมพ์ Bluetooth...');
           await runPrint(data, generatedBillNo);
         }
@@ -1021,7 +1088,10 @@ function renderClientDetailPage(data) {
         await window.staffApi.commitRedeemTransaction(data, generatedBillNo);
 
         removePrintLoadingDialog();
-        if (useAirPrint) {
+        if (withoutPrinting) {
+          showToast('🎉 ยืนยันใช้สิทธิ์เรียบร้อยแล้ว (ไม่พิมพ์ใบเสร็จ)');
+          renderMainUI();
+        } else if (useAirPrint) {
           showToast('ยืนยันใช้สิทธิ์แล้ว กรุณาเลือกพิมพ์ด้วย AirPrint');
           renderAirPrintReceipt(data, generatedBillNo);
         } else {
@@ -1040,7 +1110,9 @@ function renderClientDetailPage(data) {
           alert(`⚠️ การทำรายการถูกยกเลิก: ${errorMessage}`);
         }
       }
-    });
+    };
+    document.querySelector('#btn-confirm-redeem')?.addEventListener('click', () => confirmRedeem(false));
+    document.querySelector('#btn-confirm-no-print')?.addEventListener('click', () => confirmRedeem(true));
   }
 }
 
@@ -1421,7 +1493,11 @@ async function deleteHouseRecord(id, name) {
       showToast('ลบข้อมูลสมาชิกเรียบร้อยแล้ว');
       await loadHouseTableData();
     } catch (err) {
-      alert('เกิดข้อผิดพลาดในการลบข้อมูล: ' + err.message);
+      if (String(err?.message || '').includes('ไม่สามารถลบได้ เนื่องจากมีการใช้สิทธิ์ไปแล้ว')) {
+        showAppDialog('ไม่สามารถลบได้ เนื่องจากมีการใช้สิทธิ์ไปแล้ว', { title: 'ลบข้อมูลสมาชิก' });
+      } else {
+        alert('เกิดข้อผิดพลาดในการลบข้อมูล: ' + err.message);
+      }
     }
   }
 }
@@ -1532,6 +1608,10 @@ function renderMainUI() {
         </button>
       </div>
 
+      <button id="btn-sales-report" type="button" style="position:fixed; left:50%; transform:translateX(-50%); bottom:20px; padding:.8rem 1.2rem; border:0; border-radius:999px; background:#fff; color:#0369a1; font-size:1rem; font-weight:700; box-shadow:0 3px 10px rgba(0,0,0,.18); cursor:pointer; z-index:1000;">
+        📊 รายงานการขาย
+      </button>
+
       <button 
         id="btn-manage-member" 
         title="จัดการข้อมูลสมาชิก"
@@ -1591,6 +1671,7 @@ function renderMainUI() {
   };
 
   document.querySelector('#btn-test-print').onclick = printTestReceipt;
+  document.querySelector('#btn-sales-report').onclick = () => openSalesReport();
 
   setTimeout(showInstallGuide, 400);
   if (!printerStartupChecked) {

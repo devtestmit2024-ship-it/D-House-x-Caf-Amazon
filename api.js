@@ -447,6 +447,35 @@ async getHistory(userPhone) {
     }));
   },
 
+  /** ดึงรายการขายของวันที่เลือกสำหรับรายงาน Staff */
+  async getSalesReport(dateValue) {
+    const supabase = getSupabase();
+    const selectedDate = String(dateValue || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(selectedDate)) {
+      throw new Error('กรุณาเลือกวันที่ให้ถูกต้อง');
+    }
+
+    const start = new Date(`${selectedDate}T00:00:00`);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    const { data, error } = await supabase
+      .from('Cafe_Amazon_Bill')
+      .select('Bill_No, Cafe_Amazon_PK, Product_Type, ItemDetail, Price, Discount, Change, InsertDate, IsUse, Coupon_No')
+      .gte('InsertDate', start.toISOString())
+      .lt('InsertDate', end.toISOString())
+      .order('InsertDate', { ascending: false });
+
+    if (error) throw new Error(`ดึงรายงานการขายล้มเหลว: ${error.message}`);
+    return (data || []).map(bill => {
+      const product = PRODUCT_MAP[String(bill.Product_Type || '').trim()];
+      return {
+        ...bill,
+        productName: bill.ItemDetail || product?.name || bill.Product_Type || 'รายการสินค้า',
+        productImage: product?.image || null
+      };
+    });
+  },
+
   /**
    * 5. เพิ่ม หรือ แก้ไขข้อมูลสมาชิก
    */
@@ -518,6 +547,17 @@ async getHistory(userPhone) {
    */
   async deleteHouseData(id) {
     const supabase = getSupabase();
+    const { data: billData, error: billError } = await supabase
+      .from('Cafe_Amazon_Bill')
+      .select('Bill_No')
+      .eq('Cafe_Amazon_PK', id)
+      .limit(1);
+
+    if (billError) throw new Error(`ตรวจสอบประวัติการใช้สิทธิ์ไม่สำเร็จ: ${billError.message}`);
+    if (billData?.length) {
+      throw new Error('ไม่สามารถลบได้ เนื่องจากมีการใช้สิทธิ์ไปแล้ว');
+    }
+
     const { error } = await supabase
       .from('Cafe_Amazon_Promosion_House')
       .delete()

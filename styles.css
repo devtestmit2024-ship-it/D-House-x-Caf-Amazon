@@ -200,12 +200,14 @@ body {
   margin: 0;
 }
 
-#app.member-management-screen #house-modal {
+#app.member-management-screen #house-modal,
+#app.member-management-screen #sales-report-modal {
   width: 100%;
   min-height: 100dvh;
 }
 
-#house-modal > div[style*="max-width"] {
+#house-modal > div[style*="max-width"],
+#sales-report-modal > main {
   max-width: none !important;
   padding: 16px clamp(16px, 3vw, 48px) 32px !important;
 }
