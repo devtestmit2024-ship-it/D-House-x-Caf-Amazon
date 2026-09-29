@@ -111,6 +111,8 @@ function isIosDevice() {
 function showInstallGuide() {
   if (installGuideShown || isInstalledPwa() || localStorage.getItem(INSTALL_GUIDE_DISMISSED_KEY) === '1') return;
   const ios = isIosDevice();
+  // Android/Chrome ต้องรอ beforeinstallprompt ก่อน มิฉะนั้นปุ่มติดตั้งจะกดไม่ได้
+  if (!ios && !window.pwaInstallReady) return;
   installGuideShown = true;
   document.body.insertAdjacentHTML('beforeend', `
     <div id="pwa-install-guide" style="position:fixed; inset:0; z-index:30000; display:grid; place-items:center; padding:20px; background:rgba(20,40,29,.62);">
@@ -131,7 +133,10 @@ function showInstallGuide() {
   };
   document.querySelector('#btn-install-pwa')?.addEventListener('click', async () => {
     const opened = await window.requestPwaInstall?.();
-    if (!opened) showToast('โปรดติดตั้งจากเมนูเบราว์เซอร์');
+    if (!opened) {
+      showToast('ยังไม่พร้อมติดตั้ง กรุณาลองรีเฟรชหน้าอีกครั้ง');
+      return;
+    }
     localStorage.setItem(INSTALL_GUIDE_DISMISSED_KEY, '1');
     guide.remove();
   });
