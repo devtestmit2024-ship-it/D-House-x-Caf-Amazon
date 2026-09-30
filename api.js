@@ -1,4 +1,4 @@
-// api.js (ระบบพนักงานขาย - Supabase Integration)
+// api.js (ระบบพนักงานขาย - Cloudflare Worker + D1)
 
 const INTERNET_ERROR_MESSAGE = 'เชื่อมต่อ Internet ไม่ได้ กรุณาตรวจสอบหรือเชื่อมต่อ Internet แล้วลองอีกครั้ง';
 const nativeFetch = window.fetch.bind(window);
@@ -15,10 +15,7 @@ async function ensureInternetConnection() {
   }
   lastInternetCheckAt = now;
   try {
-    // HTTP สถานะใด ๆ หมายถึงเข้าถึง Supabase ได้; การ reject เท่านั้นคือเชื่อมต่อไม่ได้
-    await nativeFetch(`${window.SUPABASE_URL}/rest/v1/`, {
-      method: 'HEAD', cache: 'no-store', headers: { apikey: window.SUPABASE_KEY }
-    });
+    await nativeFetch(`${window.API_BASE_URL}/health`, { method: 'GET', cache: 'no-store' });
     lastInternetCheckPassed = true;
     return true;
   } catch (error) {
@@ -40,14 +37,12 @@ window.ensureInternetConnection = ensureInternetConnection;
 setInterval(() => ensureInternetConnection().catch(() => {}), 5000);
 
 /**
- * ฟังก์ชันสร้าง/ดึง Client Instance ของ Supabase
+ * ฟังก์ชันสร้าง/ดึง Client Instance ของ Cloudflare D1 Worker
  */
 function getSupabase() {
-  if (!window.supabase || !window.supabase.createClient) {
-    throw new Error('ระบบยังโหลด Supabase SDK ไม่สมบูรณ์ กรุณาลองใหม่อีกครั้ง');
-  }
+  if (!window.createD1Client) throw new Error('ระบบเชื่อมต่อ Cloudflare D1 ยังโหลดไม่สมบูรณ์ กรุณาลองใหม่อีกครั้ง');
   if (!window._supabaseInstance) {
-    window._supabaseInstance = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_KEY, { global: { fetch: onlineFetch } });
+    window._supabaseInstance = window.createD1Client();
   }
   return window._supabaseInstance;
 }
@@ -69,13 +64,7 @@ async function updateStaffUsage(phone, isUse, { keepalive = false } = {}) {
   if (!cleanPhone) return;
   const payload = { IsUse: isUse, UpdateDate: new Date().toISOString() };
   if (keepalive) {
-    const endpoint = `${window.SUPABASE_URL}/rest/v1/Cafe_Amazon_Promosion_House?Phone_No=eq.${encodeURIComponent(cleanPhone)}`;
-    const response = await nativeFetch(endpoint, {
-      method: 'PATCH',
-      headers: { apikey: window.SUPABASE_KEY, Authorization: `Bearer ${window.SUPABASE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-      body: JSON.stringify(payload), keepalive: true
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    await window.d1Request({ table: 'Cafe_Amazon_Promosion_House', action: 'update', values: payload, filters: [{ column: 'Phone_No', op: 'eq', value: cleanPhone }], orFilters: [] }, { keepalive: true });
     return;
   }
   const { error } = await getSupabase()
