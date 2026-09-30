@@ -89,9 +89,9 @@ async function updateStaffUsage(phone, isUse, { keepalive = false } = {}) {
  * แผนที่รายการสินค้า (Product Map)
  */
 const PRODUCT_MAP = {
-  '1': { name: 'แบล็คคอฟฟี (เย็น)', image: 'public/assets/image/black-coffee.webp' },
-  '2': { name: 'เอสเปรสโซ (เย็น)', image: 'public/assets/image/espresso.webp' },
-  '3': { name: 'ชานม (เย็น)', image: 'public/assets/image/tea-with-milk.webp' }
+  '1': { name: 'แบล็คคอฟฟี (เย็น)', detail: 'เย็น มูลค่า 60 บาท', image: 'public/assets/image/black-coffee.webp', color: 'orange', price: 60 },
+  '2': { name: 'เอสเปรสโซ (เย็น)', detail: 'เย็น มูลค่า 60 บาท', image: 'public/assets/image/espresso.webp', color: 'green', price: 60 },
+  '3': { name: 'ชานม (เย็น)', detail: 'เย็น มูลค่า 50 บาท', image: 'public/assets/image/tea-with-milk.webp', color: 'gold', price: 50 }
 };
 
 window.staffApi = {
@@ -279,7 +279,8 @@ async generateBillNo() {
     couponNo: data.Coupon_No || 'ไม่มีคูปองที่ใช้งานอยู่',
     productId: productIdStr,
     productName: productName,
-    productImage: product?.image || null
+    productImage: product?.image || null,
+    productPrice: Number(product?.price || 0)
   };
   },
 
@@ -382,7 +383,7 @@ async getHistory(userPhone) {
           Cafe_Amazon_PK: pkValue,
           Product_Type: rawProductId.substring(0, 13),
           ItemDetail: userData.productName,
-          Price: 0.00,
+          Price: Number(userData.productPrice || 0),
           Discount: 0.00,
           Change: 0.00,
           InsertDate: new Date().toISOString(),
@@ -471,7 +472,8 @@ async getHistory(userPhone) {
       return {
         ...bill,
         productName: bill.ItemDetail || product?.name || bill.Product_Type || 'รายการสินค้า',
-        productImage: product?.image || null
+        productImage: product?.image || null,
+        productPrice: Number(product?.price ?? bill.Price ?? 0)
       };
     });
   },

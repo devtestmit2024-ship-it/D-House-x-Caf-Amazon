@@ -829,9 +829,9 @@ function applyScannedProductFallback(data, scannedProductId) {
   if (data.productId || !scannedProductId) return data;
 
   const products = {
-    '1': { name: 'แบล็คคอฟฟี (เย็น)', image: 'public/assets/image/black-coffee.webp' },
-    '2': { name: 'เอสเปรสโซ (เย็น)', image: 'public/assets/image/espresso.webp' },
-    '3': { name: 'ชานม (เย็น)', image: 'public/assets/image/tea-with-milk.webp' }
+    '1': { name: 'แบล็คคอฟฟี (เย็น)', image: 'public/assets/image/black-coffee.webp', price: 60 },
+    '2': { name: 'เอสเปรสโซ (เย็น)', image: 'public/assets/image/espresso.webp', price: 60 },
+    '3': { name: 'ชานม (เย็น)', image: 'public/assets/image/tea-with-milk.webp', price: 50 }
   };
   const productId = String(scannedProductId);
   const product = products[productId];
@@ -840,7 +840,8 @@ function applyScannedProductFallback(data, scannedProductId) {
     ...data,
     productId,
     productName: product?.name || `สินค้า รหัส ${productId}`,
-    productImage: product?.image || null
+    productImage: product?.image || null,
+    productPrice: Number(product?.price || 0)
   };
 }
 
@@ -917,7 +918,7 @@ async function openSalesReport(dateValue = getLocalDateValue()) {
     content.innerHTML = '<p style="text-align:center; color:#64748b;">กำลังโหลดรายงาน...</p>';
     try {
       const bills = await window.staffApi.getSalesReport(selectedDate);
-      const total = bills.reduce((sum, bill) => sum + Number(bill.Price || 0) - Number(bill.Discount || 0), 0);
+      const total = bills.reduce((sum, bill) => sum + Number(bill.productPrice || 0), 0);
       content.innerHTML = `
         <div style="display:flex; justify-content:space-between; gap:12px; margin-bottom:12px; padding:12px; background:#ecfdf5; border-radius:10px; color:#065f46; font-weight:700;">
           <span>${bills.length} รายการ</span><span>ยอดขาย ฿${total.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -928,7 +929,7 @@ async function openSalesReport(dateValue = getLocalDateValue()) {
               ? `<img src="${esc(bill.productImage)}" alt="${esc(bill.productName)}" style="width:64px; height:64px; flex:0 0 64px; object-fit:cover; border-radius:10px; border:1px solid #e2e8f0; background:#f8fafc;" onerror="this.style.display='none'">`
               : '<div aria-hidden="true" style="width:64px; height:64px; flex:0 0 64px; display:grid; place-items:center; border-radius:10px; background:#f1f5f9; font-size:28px;">☕</div>'}
             <div style="min-width:0; flex:1;">
-              <div style="display:flex; justify-content:space-between; gap:12px; font-weight:700;"><span>${esc(bill.Bill_No || '-')}</span><span>฿${Number(bill.Price || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+              <div style="display:flex; justify-content:space-between; gap:12px; font-weight:700;"><span>${esc(bill.Bill_No || '-')}</span><span>฿${Number(bill.productPrice || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
               <div style="margin-top:5px; color:#334155;">${esc(bill.productName || '-')}</div>
               <div style="margin-top:5px; color:#64748b; font-size:.86rem;">${bill.InsertDate ? new Date(bill.InsertDate).toLocaleString('th-TH') : '-'}${bill.Coupon_No ? ` · คูปอง ${esc(bill.Coupon_No)}` : ''}</div>
             </div>
@@ -1609,7 +1610,7 @@ function renderMainUI() {
       </div>
 
       <button id="btn-sales-report" type="button" style="position:fixed; left:50%; transform:translateX(-50%); bottom:20px; padding:.8rem 1.2rem; border:0; border-radius:999px; background:#fff; color:#0369a1; font-size:1rem; font-weight:700; box-shadow:0 3px 10px rgba(0,0,0,.18); cursor:pointer; z-index:1000;">
-        📊 รายงานการขาย
+        📊 รายงาน
       </button>
 
       <button 
@@ -1658,7 +1659,7 @@ function renderMainUI() {
           box-shadow:0 4px 10px rgba(0,0,0,.25);
           z-index:1000;
         ">
-        🖨️ ทดสอบพิมพ์
+        🖨️ ทดสอบ
       </button>
     </div>
   `;
