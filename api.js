@@ -450,19 +450,39 @@ async getHistory(userPhone) {
     end.setDate(end.getDate() + 1);
     const { data, error } = await supabase
       .from('Cafe_Amazon_Bill')
-      .select('Bill_No, Cafe_Amazon_PK, Product_Type, ItemDetail, Price, Discount, Change, InsertDate, IsUse, Coupon_No')
+      .select('Bill_No, Cafe_Amazon_PK, Product_Type, ItemDetail, Price, Discount, Change, InsertDate, IsUse')
       .gte('InsertDate', start.toISOString())
       .lt('InsertDate', end.toISOString())
       .order('InsertDate', { ascending: false });
 
     if (error) throw new Error(`ดึงรายงานการขายล้มเหลว: ${error.message}`);
+    const memberIds = [...new Set((data || []).map(bill => bill.Cafe_Amazon_PK).filter(Boolean))];
+    let members = [];
+    if (memberIds.length) {
+      const { data: memberRows, error: memberError } = await supabase
+        .from('Cafe_Amazon_Promosion_House')
+        .select('ID, Name, Phone_No, Detail, Remark, All_Use, All_Limit, Day_Limit, Access_Level')
+        .or(memberIds.map(id => `ID.eq.${id}`).join(','));
+      if (memberError) throw new Error(`ดึงข้อมูลสมาชิกในรายงานล้มเหลว: ${memberError.message}`);
+      members = memberRows || [];
+    }
+    const memberMap = new Map(members.map(member => [String(member.ID), member]));
     return (data || []).map(bill => {
       const product = PRODUCT_MAP[String(bill.Product_Type || '').trim()];
+      const member = memberMap.get(String(bill.Cafe_Amazon_PK)) || {};
       return {
         ...bill,
         productName: bill.ItemDetail || product?.name || bill.Product_Type || 'รายการสินค้า',
         productImage: product?.image || null,
-        productPrice: Number(product?.price ?? bill.Price ?? 0)
+        productPrice: Number(product?.price ?? bill.Price ?? 0),
+        memberName: member.Name || '-',
+        memberPhone: member.Phone_No || '-',
+        memberAddress: member.Detail || '-',
+        memberRemark: member.Remark || '-',
+        memberUsedCount: Number(member.All_Use ?? 0),
+        memberAllLimit: Number(member.All_Limit ?? 0),
+        memberDayLimit: Number(member.Day_Limit ?? 1),
+        memberAccessLevel: Number(member.Access_Level ?? 0)
       };
     });
   },

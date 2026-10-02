@@ -531,7 +531,7 @@ function createReceiptLines(data, billNo) {
     { text: `${now}` },
     { 
       leftText: `No. ${billNo}`, 
-      rightText: `${data.address} ${data.project && data.project !== '-' ? data.project : ''}`.trim() 
+      rightText: `${data.address || '-'}`
     },
     { 
       leftText: `${displayName}`, 
@@ -541,6 +541,7 @@ function createReceiptLines(data, billNo) {
     { text: `${data.productName}`, bold: true },
     { text: `ใช้ไปแล้ว: ${data.usedCount + 1} สิทธิ์` },
     { text: `คงเหลือ: ${data.allLimit - (data.usedCount + 1)} สิทธิ์` },
+    ...(data.project && data.project !== '-' ? [{ text: `หมายเหตุ: ${data.project}` }] : []),
     { text: '' },
     { text: 'ขอบคุณที่ใช้บริการ', align: 'center' }
   ];
@@ -932,7 +933,6 @@ function supportsBluetoothPrinting() {
 function renderAirPrintReceipt(data, billNo) {
   const printedAt = new Date().toLocaleString('th-TH');
   const remainingBenefits = Math.max(0, data.allLimit - (data.usedCount + 1));
-  const project = data.project && data.project !== '-' ? ` ${data.project}` : '';
   app.innerHTML = `
     <div class="staff-page airprint-page">
       <div class="staff-page-header">
@@ -944,13 +944,14 @@ function renderAirPrintReceipt(data, billNo) {
         <p>ใบเสร็จรับสิทธิ์คูปอง</p>
         <hr>
         <p class="airprint-date">${esc(printedAt)}</p>
-        <p class="airprint-row"><span>เลขที่บิล: ${esc(billNo)}</span><span>${esc(data.address)}${esc(project)}</span></p>
+        <p class="airprint-row"><span>เลขที่บิล: ${esc(billNo)}</span><span>${esc(data.address)}</span></p>
         <p class="airprint-row"><span>${esc(formatCustomerName(data.name))}</span><span>${esc(maskPhoneNumber(data.phone))}</span></p>
         <hr>
         <p>จำนวน: 1 สิทธิ์ (ใช้สิทธิ์ฟรี)</p>
         <p class="airprint-product">${esc(data.productName)}</p>
         <p>ใช้ไปแล้ว: ${data.usedCount + 1} สิทธิ์</p>
         <p>คงเหลือ: ${remainingBenefits} สิทธิ์</p>
+        ${data.project && data.project !== '-' ? `<p>หมายเหตุ: ${esc(data.project)}</p>` : ''}
         <hr>
         <p class="airprint-thanks">ขอบคุณที่ใช้บริการ</p>
       </main>
@@ -1066,6 +1067,33 @@ function showReportDatePicker(initialValue) {
   });
 }
 
+function showSalesReportDetail(bill) {
+  document.querySelector('#sales-report-detail-dialog')?.remove();
+  const saleDate = bill.InsertDate ? new Date(bill.InsertDate).toLocaleString('th-TH') : '-';
+  document.body.insertAdjacentHTML('beforeend', `
+    <div id="sales-report-detail-dialog" style="position:fixed; inset:0; z-index:50001; display:grid; place-items:center; padding:20px; background:rgba(15,23,42,.6);">
+      <section role="dialog" aria-modal="true" aria-labelledby="sales-report-detail-title" style="width:min(100%,430px); max-height:calc(100dvh - 40px); overflow:auto; padding:22px; border-radius:18px; background:#fff; color:#1e293b; box-shadow:0 22px 50px rgba(0,0,0,.3);">
+        <h2 id="sales-report-detail-title" style="margin:0 0 16px; color:#0284c7; font-size:1.2rem;">ข้อมูลผู้ใช้สิทธิ์</h2>
+        <div style="display:grid; gap:9px; line-height:1.5;">
+          <div><strong>เลขที่บิล:</strong> ${esc(bill.Bill_No || '-')}</div>
+          <div><strong>วันที่ทำรายการ:</strong> ${esc(saleDate)}</div>
+          <div><strong>ชื่อ:</strong> ${esc(bill.memberName || '-')}</div>
+          <div><strong>เบอร์โทร:</strong> ${esc(maskPhoneNumber(bill.memberPhone))}</div>
+          <div><strong>รายละเอียด / บ้านเลขที่:</strong> ${esc(bill.memberAddress || '-')}</div>
+          <div><strong>หมายเหตุ:</strong> ${esc(bill.memberRemark || '-')}</div>
+          <div><strong>สินค้า:</strong> ${esc(bill.productName || '-')}</div>
+          <div><strong>ราคา:</strong> ฿${Number(bill.productPrice || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+          <div><strong>ใช้สิทธิ์แล้ว:</strong> ${Number(bill.memberUsedCount || 0)} / ${Number(bill.memberAllLimit || 0)} ครั้ง</div>
+          <div><strong>จำนวนสิทธิ์ต่อวัน:</strong> ${Number(bill.memberDayLimit || 1)} ครั้ง</div>
+        </div>
+        <div style="display:flex; justify-content:flex-end; margin-top:20px;">
+          <button id="btn-close-sales-report-detail" type="button" style="padding:10px 16px; border:0; border-radius:9px; background:#0284c7; color:#fff; font-weight:700;">ปิด</button>
+        </div>
+      </section>
+    </div>`);
+  document.querySelector('#btn-close-sales-report-detail').onclick = () => document.querySelector('#sales-report-detail-dialog')?.remove();
+}
+
 async function openSalesReport(dateValue = getLocalDateValue()) {
   app.classList.add('member-management-screen');
   app.innerHTML = `
@@ -1099,15 +1127,20 @@ async function openSalesReport(dateValue = getLocalDateValue()) {
         <div style="display:flex; justify-content:space-between; gap:12px; margin-bottom:12px; padding:12px; background:#ecfdf5; border-radius:10px; color:#065f46; font-weight:700;">
           <span>${bills.length} รายการ</span><span>ยอดขาย ฿${total.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
         </div>
-        ${bills.length ? `<div style="display:grid; gap:10px;">${bills.map(bill => `
+        ${bills.length ? `<div style="display:grid; gap:10px;">${bills.map((bill, index) => `
           <article style="padding:13px; border:1px solid #e2e8f0; border-radius:10px; background:#fff; display:flex; gap:12px; align-items:center;">
             ${renderProductImage(bill.Product_Type || bill.productId, bill.productName, bill.productImage, 64)}
             <div style="min-width:0; flex:1;">
               <div style="display:flex; justify-content:space-between; gap:12px; font-weight:700;"><span>${esc(bill.Bill_No || '-')}</span><span>฿${Number(bill.productPrice || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
               <div style="margin-top:5px; color:#334155;">${esc(bill.productName || '-')}</div>
-              <div style="margin-top:5px; color:#64748b; font-size:.86rem;">${bill.InsertDate ? new Date(bill.InsertDate).toLocaleString('th-TH') : '-'}${bill.Coupon_No ? ` · คูปอง ${esc(bill.Coupon_No)}` : ''}</div>
+              <div style="margin-top:5px; color:#475569; font-size:.88rem;">${esc(bill.memberName || '-')} · ${esc(maskPhoneNumber(bill.memberPhone))}</div>
+              <div style="margin-top:4px; color:#64748b; font-size:.86rem;">${bill.InsertDate ? new Date(bill.InsertDate).toLocaleString('th-TH') : '-'}</div>
+              <button type="button" data-sales-detail-index="${index}" style="margin-top:8px; padding:7px 10px; border:1px solid #bae6fd; border-radius:8px; background:#f0f9ff; color:#0369a1; font-weight:700;">แสดงข้อมูลเพิ่มเติม</button>
             </div>
           </article>`).join('')}</div>` : '<p style="padding:24px; text-align:center; color:#64748b; background:#fff; border-radius:10px;">ไม่พบรายการขายในวันที่เลือก</p>'}`;
+      content.querySelectorAll('[data-sales-detail-index]').forEach(button => {
+        button.onclick = () => showSalesReportDetail(bills[Number(button.dataset.salesDetailIndex)]);
+      });
     } catch (error) {
       content.innerHTML = '';
       showAppDialog(error.message || 'ไม่สามารถโหลดรายงานการขายได้', { title: 'รายงานการขาย' });
@@ -1187,7 +1220,8 @@ function renderClientDetailPage(data) {
           <div style="display:flex; flex-direction:column; gap:0.4rem; font-size:0.95rem; color:#334155;">
             <p style="margin:0;"><strong>ชื่อ:</strong> ${esc(displayName)}</p>
             <p style="margin:0;"><strong>เบอร์โทร:</strong> ${esc(maskPhoneNumber(data.phone))}</p>
-            <p style="margin:0;"><strong>รายละเอียด /บ้านเลขที่:</strong> ${esc(data.address)} ${data.project && data.project !== '-' ? esc(data.project) : ''}</p>
+            <p style="margin:0;"><strong>รายละเอียด / บ้านเลขที่:</strong> ${esc(data.address)}</p>
+            <p style="margin:0;"><strong>หมายเหตุ:</strong> ${esc(data.project || '-')}</p>
             <p style="margin:0;"><strong>คูปอง:</strong> <span style="color:#059669; font-weight:bold;">${esc(data.couponNo || '-')}</span></p>
             <p style="margin:0;"><strong>สินค้า:</strong> <span style="color:#0284c7; font-weight:bold;">${esc(data.productName)}</span></p>
           </div>
