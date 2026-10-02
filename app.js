@@ -8,6 +8,7 @@ let adminSession = null;
 let isProcessingScan = false;
 let screenWakeLock = null;
 let printerStartupChecked = false;
+let scanWithoutPrinter = false;
 
 // กันหน้าจอดับขณะใช้งาน Staff เพื่อไม่ให้ Bluetooth/การสแกนถูกระบบพักการทำงาน
 async function keepStaffScreenAwake() {
@@ -693,29 +694,45 @@ async function startScanner() {
   const salesReportButton = document.querySelector('#btn-sales-report');
   const scannerStatus = document.querySelector('#scanner-status');
   if (!readerEl) return;
+  scanWithoutPrinter = false;
 
   if (supportsBluetoothPrinting()) {
-    try {
-      const savedPrinter = getSavedPrinter();
-      // ยังไม่มีเครื่องพิมพ์: ใช้งานสแกนและออกใบเสร็จแบบไม่พิมพ์ได้
-      if (!savedPrinter) {
-        showToast('ยังไม่ได้ตั้งค่าเครื่องพิมพ์ การทำรายการนี้สามารถเลือกออกใบเสร็จแบบไม่พิมพ์ได้');
-      } else {
+    const savedPrinter = getSavedPrinter();
+    let printerError = null;
+    if (!savedPrinter) {
+      printerError = new Error('ยังไม่ได้ตั้งค่าเครื่องพิมพ์');
+    } else {
+      try {
 
-        // ครั้งแรกหลังเปิด Staff: ให้ผู้ใช้เลือกเครื่องที่ตั้งไว้ผ่านรายการของ Android/Chrome
-        // ครั้งต่อไปในรอบแอปเดียวกัน ใช้ bluetoothDevice เดิมและเชื่อมต่อแบบเงียบ ๆ
+        // ปุ่มเปิดกล้องต้องไม่เรียก Bluetooth chooser เพราะกล่องระบบจะแสดง URL ของเว็บไซต์
+        // ใช้สิทธิ์อุปกรณ์เดิมที่เคยอนุญาตและเชื่อมต่อเบื้องหลังเท่านั้น
         if (!bluetoothDevice || bluetoothDevice.id !== savedPrinter.id) {
-          await selectConfiguredPrinter();
+          bluetoothDevice = await findConfiguredPrinterForAutoConnect();
+          if (!bluetoothDevice) {
+            throw new Error(`ไม่พบเครื่องพิมพ์ที่ตั้งไว้ (${savedPrinter.name}) กรุณาเชื่อมต่อจากเมนูตั้งค่าเครื่องพิมพ์ก่อนเปิดกล้อง`);
+          }
         }
 
         showPrintLoadingDialog('กำลังตรวจสอบการเชื่อมต่อเครื่องพิมพ์...');
         await connectBluetoothPrinter();
+      } catch (error) {
+        printerError = error;
+      } finally {
+        removePrintLoadingDialog();
       }
-    } catch (error) {
-      showAppDialog(`ไม่สามารถเชื่อมต่อเครื่องพิมพ์ได้: ${error.message}`, { title: 'เครื่องพิมพ์' });
-      return;
-    } finally {
-      removePrintLoadingDialog();
+    }
+
+    if (printerError) {
+      const continueWithoutPrinter = await showConfirmDialog(
+        `ไม่พบหรือไม่สามารถเชื่อมต่อเครื่องพิมพ์ได้ (${printerError.message})\nระบบจะออกใบเสร็จแบบไม่พิมพ์ ต้องการทำรายการต่อหรือไม่?`,
+        {
+          title: 'ไม่พบเครื่องพิมพ์',
+          confirmLabel: 'ตกลง',
+          cancelLabel: 'ยกเลิก'
+        }
+      );
+      if (!continueWithoutPrinter) return;
+      scanWithoutPrinter = true;
     }
   }
 
@@ -1157,10 +1174,12 @@ function renderClientDetailPage(data) {
           <div style="margin-top:1.25rem; display:flex; flex-direction:column; gap:0.6rem;">
             ${
               hasCouponOrProduct
-                ? `<div style="display:flex; gap:.6rem;">
-                    <button id="btn-confirm-redeem" style="flex:1; padding:0.9rem; background:#059669; color:#fff; border:none; border-radius:8px; font-size:1rem; font-weight:bold; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.1);">🖨️ พิมพ์ใบเสร็จ</button>
-                    <button id="btn-confirm-no-print" style="padding:.9rem; background:#64748b; color:#fff; border:none; border-radius:8px; font-size:.95rem; font-weight:bold; cursor:pointer;">ไม่พิมพ์</button>
-                  </div>`
+                ? scanWithoutPrinter
+                  ? `<button id="btn-confirm-redeem" style="width:100%; padding:0.9rem; background:#059669; color:#fff; border:none; border-radius:8px; font-size:1rem; font-weight:bold; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.1);">✅ ยืนยันใช้สิทธิ์ (ไม่พิมพ์)</button>`
+                  : `<div style="display:flex; gap:.6rem;">
+                      <button id="btn-confirm-redeem" style="flex:1; padding:0.9rem; background:#059669; color:#fff; border:none; border-radius:8px; font-size:1rem; font-weight:bold; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.1);">🖨️ พิมพ์ใบเสร็จ</button>
+                      <button id="btn-confirm-no-print" style="padding:.9rem; background:#64748b; color:#fff; border:none; border-radius:8px; font-size:.95rem; font-weight:bold; cursor:pointer;">ไม่พิมพ์</button>
+                    </div>`
                 : `<div style="background:#fffbebe6; color:#b45309; padding:0.75rem; border-radius:8px; text-align:center; font-size:0.9rem; border:1px solid #fef3c7;">
                     ⚠️ ไม่พบคูปองหรือสินค้าที่เปิดใช้งานในขณะนี้ (ไม่สามารถพิมพ์ใบเสร็จได้)
                   </div>`
@@ -1219,7 +1238,7 @@ function renderClientDetailPage(data) {
 
         removePrintLoadingDialog();
         if (withoutPrinting) {
-          showToast('🎉 ยืนยันใช้สิทธิ์เรียบร้อยแล้ว (ไม่พิมพ์ใบเสร็จ)');
+          showToast('🎉 ออกใบเสร็จและใช้สิทธิ์เรียบร้อยแล้ว (ไม่พิมพ์)');
           renderMainUI();
         } else if (useAirPrint) {
           showToast('ยืนยันใช้สิทธิ์แล้ว กรุณาเลือกพิมพ์ด้วย AirPrint');
@@ -1241,7 +1260,7 @@ function renderClientDetailPage(data) {
         }
       }
     };
-    document.querySelector('#btn-confirm-redeem')?.addEventListener('click', () => confirmRedeem(false));
+    document.querySelector('#btn-confirm-redeem')?.addEventListener('click', () => confirmRedeem(scanWithoutPrinter));
     document.querySelector('#btn-confirm-no-print')?.addEventListener('click', () => confirmRedeem(true));
   }
 }
@@ -1725,6 +1744,7 @@ async function openAdminLoginDialog() {
 
 // ===== หน้าหลัก UI =====
 function renderMainUI() {
+  scanWithoutPrinter = false;
   app.classList.remove('member-management-screen');
   app.innerHTML = `
     <div class="shell staff-main-shell" style="max-width: 480px; margin: 0 auto; padding: 1rem; font-family: sans-serif; position: relative; min-height: 80vh;">
