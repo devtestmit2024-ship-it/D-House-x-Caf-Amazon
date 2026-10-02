@@ -870,23 +870,57 @@ function removePrintLoadingDialog() {
   document.querySelector('#print-loading-dialog')?.remove();
 }
 
-function applyScannedProductFallback(data, scannedProductId) {
-  if (data.productId || !scannedProductId) return data;
+const PRODUCT_IMAGE_PATHS = {
+  '1': 'public/assets/image/black-coffee.webp',
+  '2': 'public/assets/image/espresso.webp',
+  '3': 'public/assets/image/tea-with-milk.webp'
+};
+const DEFAULT_PRODUCT_IMAGE_PATH = 'public/assets/image/icon-main.png';
 
+function resolveProductImage(productId, productName, providedImage) {
+  if (providedImage) {
+    try {
+      return new URL(providedImage, document.baseURI).href;
+    } catch (error) {
+      console.warn('URL รูปสินค้าไม่ถูกต้อง กำลังใช้รูปสำรอง:', providedImage);
+    }
+  }
+  const normalizedId = String(productId ?? '').trim().replace(/\.0+$/, '');
+  let imagePath = PRODUCT_IMAGE_PATHS[normalizedId];
+  const name = String(productName || '').toLowerCase();
+  if (!imagePath && (name.includes('แบล็ค') || name.includes('black'))) imagePath = PRODUCT_IMAGE_PATHS['1'];
+  if (!imagePath && (name.includes('เอสเปรส') || name.includes('espresso'))) imagePath = PRODUCT_IMAGE_PATHS['2'];
+  if (!imagePath && (name.includes('ชานม') || name.includes('milk tea'))) imagePath = PRODUCT_IMAGE_PATHS['3'];
+  return new URL(imagePath || DEFAULT_PRODUCT_IMAGE_PATH, document.baseURI).href;
+}
+
+function renderProductImage(productId, productName, providedImage, size = 64) {
+  const imageUrl = resolveProductImage(productId, productName, providedImage);
+  const fallbackUrl = new URL(DEFAULT_PRODUCT_IMAGE_PATH, document.baseURI).href;
+  return `<img src="${esc(imageUrl)}" alt="${esc(productName || 'สินค้า')}" style="width:${size}px; height:${size}px; flex:0 0 ${size}px; object-fit:contain; border-radius:10px; border:1px solid #e2e8f0; background:#f8fafc;" onerror="this.onerror=null;this.src='${esc(fallbackUrl)}'">`;
+}
+
+function applyScannedProductFallback(data, scannedProductId) {
   const products = {
     '1': { name: 'แบล็คคอฟฟี (เย็น)', image: 'public/assets/image/black-coffee.webp', price: 60 },
     '2': { name: 'เอสเปรสโซ (เย็น)', image: 'public/assets/image/espresso.webp', price: 60 },
     '3': { name: 'ชานม (เย็น)', image: 'public/assets/image/tea-with-milk.webp', price: 50 }
   };
-  const productId = String(scannedProductId);
+  const normalizeProductId = value => String(value ?? '').trim().replace(/\.0+$/, '');
+  const databaseProductId = normalizeProductId(data?.productId);
+  const qrProductId = normalizeProductId(scannedProductId);
+  // หากรหัสจากฐานข้อมูลไม่ตรงรายการ ให้ใช้รหัสที่มากับ QR แทน
+  const productId = products[databaseProductId] ? databaseProductId : qrProductId || databaseProductId;
   const product = products[productId];
+
+  if (!product) return data;
 
   return {
     ...data,
     productId,
-    productName: product?.name || `สินค้า รหัส ${productId}`,
-    productImage: product?.image || null,
-    productPrice: Number(product?.price || 0)
+    productName: data?.productName && data.productName !== 'ไม่ได้เลือกสินค้า' ? data.productName : product.name,
+    productImage: resolveProductImage(productId, product.name, data?.productImage),
+    productPrice: Number(data?.productPrice || product.price || 0)
   };
 }
 
@@ -1066,9 +1100,7 @@ async function openSalesReport(dateValue = getLocalDateValue()) {
         </div>
         ${bills.length ? `<div style="display:grid; gap:10px;">${bills.map(bill => `
           <article style="padding:13px; border:1px solid #e2e8f0; border-radius:10px; background:#fff; display:flex; gap:12px; align-items:center;">
-            ${bill.productImage
-              ? `<img src="${esc(bill.productImage)}" alt="${esc(bill.productName)}" style="width:64px; height:64px; flex:0 0 64px; object-fit:cover; border-radius:10px; border:1px solid #e2e8f0; background:#f8fafc;" onerror="this.style.display='none'">`
-              : '<div aria-hidden="true" style="width:64px; height:64px; flex:0 0 64px; display:grid; place-items:center; border-radius:10px; background:#f1f5f9; font-size:28px;">☕</div>'}
+            ${renderProductImage(bill.Product_Type || bill.productId, bill.productName, bill.productImage, 64)}
             <div style="min-width:0; flex:1;">
               <div style="display:flex; justify-content:space-between; gap:12px; font-weight:700;"><span>${esc(bill.Bill_No || '-')}</span><span>฿${Number(bill.productPrice || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
               <div style="margin-top:5px; color:#334155;">${esc(bill.productName || '-')}</div>
@@ -1137,7 +1169,7 @@ function renderClientDetailPage(data) {
     data.couponNo !== 'ไม่มีคูปองที่ใช้งานอยู่'
   );
 
-  const imgUrl = data.productImage || data.imageUrl || data.product_image || '';
+  const imgUrl = resolveProductImage(data.productId, data.productName, data.productImage || data.imageUrl || data.product_image);
 
   const modalHtml = `
     <div id="client-detail-modal" class="staff-page">
@@ -1159,13 +1191,9 @@ function renderClientDetailPage(data) {
             <p style="margin:0;"><strong>สินค้า:</strong> <span style="color:#0284c7; font-weight:bold;">${esc(data.productName)}</span></p>
           </div>
 
-          ${
-            imgUrl 
-              ? `<div style="text-align:center; margin:1rem 0;">
-                  <img src="${esc(imgUrl)}" alt="${esc(data.productName)}" style="max-width:100%; max-height:200px; object-fit:contain; border-radius:8px; border:1px solid #e2e8f0; padding:4px;" />
-                </div>`
-              : ''
-          }
+          <div style="display:flex; justify-content:center; margin:1rem 0;">
+            ${renderProductImage(data.productId, data.productName, imgUrl, 200)}
+          </div>
 
           <p style="margin:0.75rem 0 0.25rem 0; font-size:0.95rem; color:#334155;">
             <strong>สิทธิ์ที่ใช้ไป:</strong> <span style="color:#d97706; font-weight:bold;">${data.usedCount}</span> / ${data.allLimit} ครั้ง
@@ -1301,9 +1329,7 @@ async function openHistoryModal(phone, clientData, onClose) {
 
     bodyEl.innerHTML = historyList.map(item => `
       <div style="border-bottom:1px solid #e2e8f0; padding:0.85rem 0; display:flex; gap:0.75rem; justify-content:space-between; align-items:center;">
-        ${item.productImage
-          ? `<img src="${esc(item.productImage)}" alt="${esc(item.productName)}" style="width:58px; height:58px; flex:0 0 58px; object-fit:cover; border-radius:10px; border:1px solid #e2e8f0; background:#f8fafc;" onerror="this.style.display='none'">`
-          : `<div aria-hidden="true" style="width:58px; height:58px; flex:0 0 58px; display:grid; place-items:center; border-radius:10px; background:#f1f5f9; font-size:25px;">☕</div>`}
+        ${renderProductImage(item.productId, item.productName, item.productImage, 58)}
         <div style="min-width:0; flex:1;">
           <div style="font-weight:bold; color:#1e293b; font-size:0.95rem;">${esc(item.productName)}</div>
           <div style="font-size:0.8rem; color:#64748b; margin-top:2px;">เลขบิล: ${esc(item.billNo)} | คูปอง: ${esc(item.couponNo)}</div>
