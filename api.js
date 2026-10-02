@@ -83,6 +83,13 @@ const PRODUCT_MAP = {
   '3': { name: 'ชานม (เย็น)', detail: 'เย็น มูลค่า 50 บาท', image: 'public/assets/image/tea-with-milk.webp', color: 'gold', price: 50 }
 };
 
+const normalizeProductId = value => String(value ?? '').trim().replace(/\.0+$/, '');
+const getVisibleProductName = (storedName, product) => {
+  const name = cleanString(storedName);
+  if (!name || /^สินค้า\s*รหัส\s*/i.test(name)) return product?.name || 'รายการสินค้า';
+  return name;
+};
+
 window.staffApi = {
   async releaseUserUsage(phone, { keepalive = false } = {}) {
     const cleanPhone = cleanString(phone);
@@ -251,9 +258,9 @@ async generateBillNo() {
     throw new Error('คูปองหมดอายุแล้ว กรุณาให้ลูกค้าสร้างคูปองใหม่');
   }
 
-  const productIdStr = data.Product_ID ? String(data.Product_ID) : null;
+  const productIdStr = data.Product_ID != null ? normalizeProductId(data.Product_ID) : null;
   const product = productIdStr ? PRODUCT_MAP[productIdStr] : null;
-  const productName = product?.name || (productIdStr ? `สินค้า รหัส ${productIdStr}` : 'ไม่ได้เลือกสินค้า');
+  const productName = product?.name || (productIdStr ? 'รายการสินค้า' : 'ไม่ได้เลือกสินค้า');
 
   return {
     id: data.ID,
@@ -326,7 +333,7 @@ async getHistory(userPhone) {
   if (billErr) throw new Error(`เกิดข้อผิดพลาดในการดึงประวัติการใช้สิทธิ์: ${billErr.message}`);
 
   return (bills || []).map((bill) => {
-    const pId = bill.Product_Type ? String(bill.Product_Type).trim() : null;
+    const pId = bill.Product_Type != null ? normalizeProductId(bill.Product_Type) : null;
     const mappedProduct = pId ? PRODUCT_MAP[pId] : null;
 
     const formattedDate = bill.InsertDate
@@ -343,7 +350,7 @@ async getHistory(userPhone) {
       billNo: bill.Bill_No || '-',
       useDate: formattedDate,
       phone: cleanPhone,
-      productName: bill.ItemDetail || mappedProduct?.name || 'รายการสินค้า',
+      productName: getVisibleProductName(bill.ItemDetail, mappedProduct),
       productImage: mappedProduct?.image || null,
       couponNo: bill.Coupon_No || '-'
     };
@@ -362,7 +369,7 @@ async getHistory(userPhone) {
     const pkValue = userData.id ? parseInt(userData.id, 10) : null;
     const nextUsedCount = (userData.usedCount || 0) + 1;
 
-    const rawProductId = userData.productId ? String(userData.productId) : '1';
+    const rawProductId = userData.productId ? normalizeProductId(userData.productId) : '1';
 
     const { error: billErr } = await supabase
       .from('Cafe_Amazon_Bill')
@@ -468,11 +475,13 @@ async getHistory(userPhone) {
     }
     const memberMap = new Map(members.map(member => [String(member.ID), member]));
     return (data || []).map(bill => {
-      const product = PRODUCT_MAP[String(bill.Product_Type || '').trim()];
+      const productId = normalizeProductId(bill.Product_Type);
+      const product = PRODUCT_MAP[productId];
       const member = memberMap.get(String(bill.Cafe_Amazon_PK)) || {};
       return {
         ...bill,
-        productName: bill.ItemDetail || product?.name || bill.Product_Type || 'รายการสินค้า',
+        productId,
+        productName: getVisibleProductName(bill.ItemDetail, product),
         productImage: product?.image || null,
         productPrice: Number(product?.price ?? bill.Price ?? 0),
         memberName: member.Name || '-',

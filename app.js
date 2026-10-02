@@ -46,7 +46,11 @@ function keepFocusedFieldVisible() {
 document.addEventListener('focusin', keepFocusedFieldVisible);
 window.visualViewport?.addEventListener('resize', keepFocusedFieldVisible);
 
-const esc = val => String(val ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;' }[c]));
+const removeVisibleProductCode = value => String(value ?? '')
+  .replace(/สินค้า\s*รหัส\s*[-\w.]+/gi, '')
+  .replace(/รหัสสินค้า\s*[:：]?\s*[-\w.]+/gi, '')
+  .trim();
+const esc = val => removeVisibleProductCode(val).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;' }[c]));
 
 function maskPhoneNumber(phone) {
   if (!phone) return '-';
