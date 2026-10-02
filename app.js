@@ -55,7 +55,14 @@ function maskPhoneNumber(phone) {
 }
 
 let appDialogTimer = null;
-function showAppDialog(message, { title = 'แจ้งเตือน', autoCloseMs = 0, actionLabel = 'ปิด', onAction = null } = {}) {
+function showAppDialog(message, {
+  title = 'แจ้งเตือน',
+  autoCloseMs = 0,
+  actionLabel = 'ปิด',
+  cancelLabel = '',
+  onAction = null,
+  onCancel = null
+} = {}) {
   clearTimeout(appDialogTimer);
   document.querySelector('#app-message-dialog')?.remove();
   const isInternetError = String(message).includes('เชื่อมต่อ Internet ไม่ได้');
@@ -67,7 +74,10 @@ function showAppDialog(message, { title = 'แจ้งเตือน', autoClo
       <section role="dialog" aria-modal="true" aria-labelledby="app-message-title" style="width:min(100%,360px); padding:22px; border-radius:18px; background:#fff; color:#1e293b; box-shadow:0 20px 45px rgba(0,0,0,.28); text-align:center;">
         <h2 id="app-message-title" style="margin:0 0 10px; color:#194832; font-size:1.2rem;">${esc(title)}</h2>
         <p style="${messageStyle}">${esc(message)}</p>
-        <button id="btn-close-app-message" type="button" style="padding:10px 16px; border:0; border-radius:10px; background:#256b45; color:#fff; font-weight:700;">${esc(actionLabel)}</button>
+        <div style="display:flex; justify-content:center; gap:10px;">
+          ${cancelLabel ? `<button id="btn-cancel-app-message" type="button" style="padding:10px 16px; border:0; border-radius:10px; background:#e2e8f0; color:#334155; font-weight:700;">${esc(cancelLabel)}</button>` : ''}
+          <button id="btn-close-app-message" type="button" style="padding:10px 16px; border:0; border-radius:10px; background:#256b45; color:#fff; font-weight:700;">${esc(actionLabel)}</button>
+        </div>
       </section><style>@keyframes internet-blink { 50% { opacity:.18; } }</style>
     </div>`);
   const dialog = document.querySelector('#app-message-dialog');
@@ -79,11 +89,29 @@ function showAppDialog(message, { title = 'แจ้งเตือน', autoClo
     close();
     onAction?.();
   };
+  document.querySelector('#btn-cancel-app-message')?.addEventListener('click', () => {
+    close();
+    onCancel?.();
+  });
   if (autoCloseMs > 0) appDialogTimer = setTimeout(close, autoCloseMs);
 }
 
-function showToast(msg) {
-  showAppDialog(msg, { autoCloseMs: 3000 });
+function showConfirmDialog(message, {
+  title = 'ยืนยันรายการ',
+  confirmLabel = 'ยืนยัน',
+  cancelLabel = 'ยกเลิก'
+} = {}) {
+  return new Promise(resolve => showAppDialog(message, {
+    title,
+    actionLabel: confirmLabel,
+    cancelLabel,
+    onAction: () => resolve(true),
+    onCancel: () => resolve(false)
+  }));
+}
+
+function showToast(msg, title = 'แจ้งเตือน') {
+  showAppDialog(msg, { title, autoCloseMs: 3000 });
 }
 
 // เปลี่ยน alert เดิมทั้งหมดให้เป็น Dialog ของแอป เพื่อไม่ให้ข้อความหายเร็วหรือถูกเบราว์เซอร์ปิดกั้น
@@ -891,6 +919,101 @@ function getLocalDateValue(date = new Date()) {
   return offsetDate.toISOString().slice(0, 10);
 }
 
+function parseReportDate(value) {
+  const parts = String(value || '').split('-').map(Number);
+  if (parts.length !== 3 || parts.some(part => !Number.isInteger(part))) return new Date();
+  return new Date(parts[0], parts[1] - 1, parts[2]);
+}
+
+function formatReportDate(value) {
+  return parseReportDate(value).toLocaleDateString('th-TH', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric'
+  });
+}
+
+function showReportDatePicker(initialValue) {
+  return new Promise(resolve => {
+    document.querySelector('#report-date-picker')?.remove();
+    let selectedDate = parseReportDate(initialValue);
+    let visibleMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+
+    document.body.insertAdjacentHTML('beforeend', `
+      <div id="report-date-picker" style="position:fixed; inset:0; z-index:50001; display:grid; place-items:center; padding:20px; background:rgba(15,23,42,.58);">
+        <section role="dialog" aria-modal="true" aria-labelledby="report-date-picker-title" style="width:min(100%,380px); overflow:hidden; border-radius:18px; background:#fff; color:#1e293b; box-shadow:0 22px 50px rgba(0,0,0,.3);">
+          <header style="padding:18px 20px; background:#0284c7; color:#fff;">
+            <div id="report-date-picker-title" style="font-size:.9rem; opacity:.9;">เลือกวันที่รายงาน</div>
+            <div id="report-date-selected" style="margin-top:5px; font-size:1.35rem; font-weight:800;"></div>
+          </header>
+          <div style="padding:14px 16px 10px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+              <button id="report-date-prev" type="button" aria-label="เดือนก่อนหน้า" style="width:42px; height:42px; border:0; border-radius:50%; background:#e0f2fe; color:#0369a1; font-size:24px;">‹</button>
+              <strong id="report-date-month" style="font-size:1.05rem;"></strong>
+              <button id="report-date-next" type="button" aria-label="เดือนถัดไป" style="width:42px; height:42px; border:0; border-radius:50%; background:#e0f2fe; color:#0369a1; font-size:24px;">›</button>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(7,1fr); text-align:center; color:#64748b; font-size:.78rem; font-weight:700;">
+              ${['อา','จ','อ','พ','พฤ','ศ','ส'].map(day => `<span style="padding:7px 0;">${day}</span>`).join('')}
+            </div>
+            <div id="report-date-days" style="display:grid; grid-template-columns:repeat(7,1fr); gap:3px;"></div>
+          </div>
+          <footer style="display:flex; justify-content:flex-end; gap:8px; padding:10px 16px 16px;">
+            <button id="report-date-today" type="button" style="margin-right:auto; padding:10px 12px; border:0; border-radius:9px; background:#e0f2fe; color:#0369a1; font-weight:700;">วันนี้</button>
+            <button id="report-date-cancel" type="button" style="padding:10px 14px; border:0; border-radius:9px; background:#e2e8f0; color:#334155; font-weight:700;">ยกเลิก</button>
+            <button id="report-date-confirm" type="button" style="padding:10px 16px; border:0; border-radius:9px; background:#0284c7; color:#fff; font-weight:700;">ตกลง</button>
+          </footer>
+        </section>
+      </div>`);
+
+    const picker = document.querySelector('#report-date-picker');
+    const finish = value => {
+      picker.remove();
+      resolve(value);
+    };
+    const toValue = date => getLocalDateValue(date);
+    const renderCalendar = () => {
+      document.querySelector('#report-date-selected').textContent = formatReportDate(toValue(selectedDate));
+      document.querySelector('#report-date-month').textContent = visibleMonth.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' });
+      const daysContainer = document.querySelector('#report-date-days');
+      const year = visibleMonth.getFullYear();
+      const month = visibleMonth.getMonth();
+      const firstDay = new Date(year, month, 1).getDay();
+      const dayCount = new Date(year, month + 1, 0).getDate();
+      const cells = Array(firstDay).fill('<span></span>');
+      for (let day = 1; day <= dayCount; day += 1) {
+        const candidate = new Date(year, month, day);
+        const isSelected = toValue(candidate) === toValue(selectedDate);
+        const isToday = toValue(candidate) === getLocalDateValue();
+        cells.push(`<button type="button" data-day="${day}" style="aspect-ratio:1; border:${isToday ? '1px solid #0284c7' : '1px solid transparent'}; border-radius:50%; background:${isSelected ? '#0284c7' : 'transparent'}; color:${isSelected ? '#fff' : '#1e293b'}; font:inherit; font-weight:${isSelected ? '800' : '500'};">${day}</button>`);
+      }
+      daysContainer.innerHTML = cells.join('');
+      daysContainer.querySelectorAll('[data-day]').forEach(button => {
+        button.onclick = () => {
+          selectedDate = new Date(year, month, Number(button.dataset.day));
+          renderCalendar();
+        };
+      });
+    };
+
+    document.querySelector('#report-date-prev').onclick = () => {
+      visibleMonth = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() - 1, 1);
+      renderCalendar();
+    };
+    document.querySelector('#report-date-next').onclick = () => {
+      visibleMonth = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 1);
+      renderCalendar();
+    };
+    document.querySelector('#report-date-today').onclick = () => {
+      selectedDate = new Date();
+      visibleMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+      renderCalendar();
+    };
+    document.querySelector('#report-date-cancel').onclick = () => finish(null);
+    document.querySelector('#report-date-confirm').onclick = () => finish(toValue(selectedDate));
+    renderCalendar();
+  });
+}
+
 async function openSalesReport(dateValue = getLocalDateValue()) {
   app.classList.add('member-management-screen');
   app.innerHTML = `
@@ -902,18 +1025,19 @@ async function openSalesReport(dateValue = getLocalDateValue()) {
       <main style="flex:1; max-width:1000px; width:100%; margin:0 auto; padding:20px; box-sizing:border-box;">
         <section style="padding:16px; border:1px solid #cbd5e1; border-radius:12px; background:#fff; box-shadow:0 4px 6px -1px rgba(0,0,0,.05);">
           <label for="sales-report-date" style="display:block; margin-bottom:8px; font-weight:700;">เลือกวันที่</label>
-          <div style="display:flex; gap:8px; margin-bottom:16px;">
-            <input id="sales-report-date" type="date" value="${esc(dateValue)}" style="flex:1; min-width:0; padding:10px; border:1px solid #cbd5e1; border-radius:8px; font:inherit;">
-            <button id="btn-refresh-sales-report" type="button" style="padding:10px 14px; border:0; border-radius:8px; background:#0284c7; color:#fff; font-weight:700;">แสดงรายงาน</button>
-          </div>
+          <button id="sales-report-date" type="button" style="width:100%; display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; padding:11px 13px; border:1px solid #cbd5e1; border-radius:8px; background:#fff; color:#1e293b; font:inherit; text-align:left;">
+            <span id="sales-report-date-label">${esc(formatReportDate(dateValue))}</span>
+            <span aria-hidden="true" style="font-size:1.25rem;">📅</span>
+          </button>
           <div id="sales-report-content" aria-live="polite"></div>
         </section>
       </main>
     </div>`;
 
   document.querySelector('#btn-close-sales-report').onclick = renderMainUI;
+  let selectedReportDate = dateValue;
   const loadReport = async () => {
-    const selectedDate = document.querySelector('#sales-report-date').value;
+    const selectedDate = selectedReportDate;
     const content = document.querySelector('#sales-report-content');
     content.innerHTML = '<p style="text-align:center; color:#64748b;">กำลังโหลดรายงาน...</p>';
     try {
@@ -939,8 +1063,13 @@ async function openSalesReport(dateValue = getLocalDateValue()) {
       showAppDialog(error.message || 'ไม่สามารถโหลดรายงานการขายได้', { title: 'รายงานการขาย' });
     }
   };
-  document.querySelector('#btn-refresh-sales-report').onclick = loadReport;
-  document.querySelector('#sales-report-date').onchange = loadReport;
+  document.querySelector('#sales-report-date').onclick = async () => {
+    const confirmedDate = await showReportDatePicker(selectedReportDate);
+    if (!confirmedDate) return;
+    selectedReportDate = confirmedDate;
+    document.querySelector('#sales-report-date-label').textContent = formatReportDate(selectedReportDate);
+    await loadReport();
+  };
   await loadReport();
 }
 
@@ -972,9 +1101,9 @@ async function processPhoneQuery(phone, scannedProductId = null, expiresAt = nul
     removePrintLoadingDialog();
     const message = String(err?.message || '');
     if (message.includes('QR_PRODUCT_NOT_FOUND') || message.includes('ไม่พบข้อมูลสมาชิก') || message.includes('ไม่พบคูปอง') || message.includes('ไม่ได้เลือกสินค้า')) {
-      alert('ไม่พบ QR Code กรุณาตรวจสอบ QR แล้วลองอีกครั้ง');
+      showAppDialog('ไม่พบ QR Code กรุณาตรวจสอบ QR แล้วลองอีกครั้ง', { title: 'ไม่พบสินค้า' });
     } else {
-      alert('เกิดข้อผิดพลาด: ' + message);
+      showAppDialog('เกิดข้อผิดพลาด: ' + message, { title: 'สแกน QR ไม่สำเร็จ' });
     }
   }
 }
@@ -1057,7 +1186,7 @@ function renderClientDetailPage(data) {
     const confirmRedeem = async (withoutPrinting = false) => {
       // ตรวจอีกครั้งก่อนสร้างบิลหรือสั่งพิมพ์ เผื่อคูปองหมดอายุระหว่างเปิดหน้านี้
       if (isCouponExpired(data.couponExpiresAt)) {
-        alert('คูปองหมดอายุแล้ว กรุณาให้ลูกค้าสร้างคูปองใหม่');
+        showAppDialog('คูปองหมดอายุแล้ว กรุณาให้ลูกค้าสร้างคูปองใหม่', { title: 'คูปองหมดอายุ' });
         return;
       }
 
@@ -1104,11 +1233,11 @@ function renderClientDetailPage(data) {
         console.error(err);
         removePrintLoadingDialog();
         if (String(err.message || '').includes('คูปองหมดอายุ')) {
-          alert('คูปองหมดอายุแล้ว กรุณาให้ลูกค้าสร้างคูปองใหม่');
+          showAppDialog('คูปองหมดอายุแล้ว กรุณาให้ลูกค้าสร้างคูปองใหม่', { title: 'คูปองหมดอายุ' });
         } else {
           const errorMessage = String(err?.message ?? '').trim()
             || 'ไม่สามารถเชื่อมต่อเครื่องพิมพ์ที่ตั้งค่าไว้ได้ กรุณาเปิดเครื่องพิมพ์แล้วลองอีกครั้ง';
-          alert(`⚠️ การทำรายการถูกยกเลิก: ${errorMessage}`);
+          showAppDialog(`การทำรายการถูกยกเลิก: ${errorMessage}`, { title: 'ทำรายการไม่สำเร็จ' });
         }
       }
     };
@@ -1357,7 +1486,11 @@ function openHouseRecordModal(title, isEdit = false, record = null) {
   if (isEdit) {
     document.querySelector('#btn-reset-password')?.addEventListener('click', async () => {
       if (!record?.id) return;
-      if (confirm('ยืนยันที่จะรีเซ็ตรหัสผ่านของสมาชิกคนนี้กลับเป็น 1234 ใช่หรือไม่?')) {
+      if (await showConfirmDialog('ยืนยันที่จะรีเซ็ตรหัสผ่านของสมาชิกคนนี้กลับเป็น 1234 ใช่หรือไม่?', {
+        title: 'รีเซ็ตรหัสผ่าน',
+        confirmLabel: 'รีเซ็ต',
+        cancelLabel: 'ยกเลิก'
+      })) {
         try {
           if (window.staffApi?.resetPassword) {
             await window.staffApi.resetPassword(record.id, '1234');
@@ -1366,7 +1499,7 @@ function openHouseRecordModal(title, isEdit = false, record = null) {
           }
           showToast('รีเซ็ตรหัสผ่านเป็น 1234 เรียบร้อยแล้ว');
         } catch (err) {
-          alert('เกิดข้อผิดพลาดในการรีเซ็ตรหัสผ่าน: ' + err.message);
+          showAppDialog('เกิดข้อผิดพลาดในการรีเซ็ตรหัสผ่าน: ' + err.message, { title: 'รีเซ็ตรหัสผ่านไม่สำเร็จ' });
         }
       }
     });
@@ -1416,7 +1549,7 @@ function openHouseRecordModal(title, isEdit = false, record = null) {
       showToast('บันทึกข้อมูลเรียบร้อยแล้ว');
       closeForm();
     } catch (err) {
-      alert('เกิดข้อผิดพลาดในการบันทึก: ' + err.message);
+      showAppDialog('เกิดข้อผิดพลาดในการบันทึก: ' + err.message, { title: 'บันทึกข้อมูลไม่สำเร็จ' });
     }
   };
 }
@@ -1484,7 +1617,11 @@ function renderHouseTable(list) {
 async function deleteHouseRecord(id, name) {
   if (!id) return;
 
-  if (confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบข้อมูลสมาชิก "${name || 'รายนี้'}" ?\nการดำเนินการนี้ไม่สามารถย้อนกลับได้`)) {
+  if (await showConfirmDialog(`คุณแน่ใจหรือไม่ว่าต้องการลบข้อมูลสมาชิก "${name || 'รายนี้'}" ?\nการดำเนินการนี้ไม่สามารถย้อนกลับได้`, {
+    title: 'ลบข้อมูลสมาชิก',
+    confirmLabel: 'ลบข้อมูล',
+    cancelLabel: 'ยกเลิก'
+  })) {
     try {
       if (window.staffApi?.deleteHouseData) {
         await window.staffApi.deleteHouseData(id);
@@ -1497,7 +1634,7 @@ async function deleteHouseRecord(id, name) {
       if (String(err?.message || '').includes('ไม่สามารถลบได้ เนื่องจากมีการใช้สิทธิ์ไปแล้ว')) {
         showAppDialog('ไม่สามารถลบได้ เนื่องจากมีการใช้สิทธิ์ไปแล้ว', { title: 'ลบข้อมูลสมาชิก' });
       } else {
-        alert('เกิดข้อผิดพลาดในการลบข้อมูล: ' + err.message);
+        showAppDialog('เกิดข้อผิดพลาดในการลบข้อมูล: ' + err.message, { title: 'ลบข้อมูลไม่สำเร็จ' });
       }
     }
   }
