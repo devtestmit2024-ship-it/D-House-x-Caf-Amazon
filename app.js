@@ -255,6 +255,18 @@ function savePrinter(device) {
   }));
 }
 
+function normalizePrinterName(name) {
+  return String(name || '').trim().toLowerCase();
+}
+
+function isSameSavedPrinter(device, saved) {
+  if (!device || !saved) return false;
+  if (device.id && device.id === saved.id) return true;
+  const deviceName = normalizePrinterName(device.name);
+  const savedName = normalizePrinterName(saved.name);
+  return Boolean(deviceName && savedName && savedName !== 'bluetooth printer' && deviceName === savedName);
+}
+
 function clearSavedPrinter() {
   localStorage.removeItem(PRINTER_SETTINGS_KEY);
   forgetPrinter();
@@ -267,10 +279,12 @@ async function getConfiguredPrinterDevice() {
     throw new Error('เบราว์เซอร์นี้ไม่สามารถตรวจสอบเครื่องพิมพ์ที่ตั้งค่าไว้ได้');
   }
   const devices = await navigator.bluetooth.getDevices();
-  const device = devices.find(item => item.id === saved.id);
+  const device = devices.find(item => item.id === saved.id)
+    || devices.find(item => isSameSavedPrinter(item, saved));
   if (!device) {
     throw new Error(`ไม่พบเครื่องพิมพ์ที่ตั้งไว้ (${saved.name}) กรุณาตั้งค่าเครื่องพิมพ์ใหม่`);
   }
+  if (device.id !== saved.id) savePrinter(device);
   return device;
 }
 
@@ -280,13 +294,21 @@ async function findConfiguredPrinterForAutoConnect(ignoreCachedDevice = false) {
   if (!saved) throw new Error('ยังไม่ได้ตั้งค่าเครื่องพิมพ์ กรุณาตั้งค่าจากหน้าจัดการสมาชิก');
 
   // ใช้ object เดิมได้ทันทีระหว่างที่หน้าแอปยังเปิดอยู่
-  if (!ignoreCachedDevice && bluetoothDevice?.id === saved.id) return bluetoothDevice;
+  if (!ignoreCachedDevice && isSameSavedPrinter(bluetoothDevice, saved)) {
+    if (bluetoothDevice.id !== saved.id) savePrinter(bluetoothDevice);
+    return bluetoothDevice;
+  }
 
   // Chrome บางรุ่นรองรับ getDevices() จึงเชื่อมต่อเครื่องเดิมได้โดยไม่ต้องเปิดตัวเลือก
   if (!navigator.bluetooth?.getDevices) return null;
   const devices = await navigator.bluetooth.getDevices();
-  const device = devices.find(item => item.id === saved.id) || null;
-  if (device) bluetoothDevice = device;
+  const device = devices.find(item => item.id === saved.id)
+    || devices.find(item => isSameSavedPrinter(item, saved))
+    || null;
+  if (device) {
+    bluetoothDevice = device;
+    if (device.id !== saved.id) savePrinter(device);
+  }
   return device;
 }
 
@@ -298,11 +320,14 @@ async function selectConfiguredPrinter() {
     ? { filters: [{ name: saved.name }], optionalServices: PRINTER_SERVICES }
     : { acceptAllDevices: true, optionalServices: PRINTER_SERVICES };
   const device = await navigator.bluetooth.requestDevice(options);
-  if (device.id !== saved.id) {
+  const savedHasSpecificName = normalizePrinterName(saved.name) !== 'bluetooth printer';
+  if (savedHasSpecificName && !isSameSavedPrinter(device, saved)) {
     throw new Error(`กรุณาเลือกเครื่องที่ตั้งค่าไว้ (${saved.name}) เท่านั้น`);
   }
   bluetoothDevice = device;
   bluetoothCharacteristic = null;
+  // Chrome อาจเปลี่ยน device.id หลังล้างสิทธิ์หรือจับคู่ใหม่ จึงบันทึก ID ล่าสุดของเครื่องชื่อเดิม
+  savePrinter(device);
   return device;
 }
 
@@ -432,10 +457,12 @@ function showPrinterStartupDialog(message, { allowSelect = false } = {}) {
   showAppDialog(message, {
     title: 'เครื่องพิมพ์',
     actionLabel: allowSelect ? 'เลือกเครื่องพิมพ์' : 'รับทราบ',
+    cancelLabel: allowSelect ? 'ภายหลัง' : '',
     onAction: allowSelect ? async () => {
       try {
-        showPrintLoadingDialog('กำลังเชื่อมต่อเครื่องพิมพ์...');
+        // requestDevice ต้องเรียกตรงจากการกดของผู้ใช้ ก่อนแสดง Dialog โหลด
         await selectConfiguredPrinter();
+        showPrintLoadingDialog('กำลังเชื่อมต่อเครื่องพิมพ์...');
         await connectBluetoothPrinter();
         showToast('เชื่อมต่อเครื่องพิมพ์เรียบร้อยแล้ว');
       } catch (error) {
@@ -451,6 +478,18 @@ async function initializePrinterOnMainScreen() {
   const saved = getSavedPrinter();
   if (!saved) {
     showPrinterStartupDialog('ยังไม่ได้ตั้งค่าเครื่องพิมพ์ คุณยังใช้งานระบบได้ แต่การยืนยันใช้สิทธิ์จะออกใบเสร็จแบบไม่พิมพ์');
+    return;
+  }
+
+  try {
+    bluetoothDevice = await findConfiguredPrinterForAutoConnect();
+    if (!bluetoothDevice) throw new Error('เบราว์เซอร์ไม่พบสิทธิ์เครื่องพิมพ์เดิม');
+    await connectBluetoothPrinter({ retryCount: 1 });
+  } catch (error) {
+    showPrinterStartupDialog(
+      `ไม่สามารถเชื่อมต่อเครื่องพิมพ์ ${saved.name} อัตโนมัติได้ กรุณาเปิดเครื่องพิมพ์ แล้วกดเลือกเครื่องพิมพ์เพื่อจับคู่ใหม่`,
+      { allowSelect: true }
+    );
   }
 }
 
