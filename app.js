@@ -858,7 +858,7 @@ async function startScanner({ allowWithoutPrinter = false } = {}) {
   if (manageButton) manageButton.style.display = 'none';
   if (testPrintButton) testPrintButton.style.display = 'none';
   if (salesReportButton) salesReportButton.style.display = 'none';
-  if (scannerStatus) scannerStatus.textContent = 'เล็ง QR Code ให้อยู่ในกรอบ กล้องจะอ่านให้อัตโนมัติ';
+  if (scannerStatus) scannerStatus.textContent = '';
   if (btn) {
     btn.textContent = '❌ ปิดกล้องสแกน';
     btn.style.background = '#dc2626';
