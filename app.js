@@ -507,6 +507,7 @@ async function initializePrinterOnMainScreen() {
       title: 'เครื่องพิมพ์',
       actionLabel: 'ตกลง',
       cancelLabel: 'ปิด',
+      onAction: () => startScanner({ allowWithoutPrinter: true }),
       onCancel: closeStaffApplication
     });
     return;
@@ -799,7 +800,7 @@ async function printTestReceipt() {
 }
 
 // ===== ระบบสแกนกล้อง QR Code =====
-async function startScanner() {
+async function startScanner({ allowWithoutPrinter = false } = {}) {
   const readerEl = document.querySelector('#reader');
   const btn = document.querySelector('#btn-toggle-camera');
   const manageButton = document.querySelector('#btn-manage-member');
@@ -807,9 +808,9 @@ async function startScanner() {
   const salesReportButton = document.querySelector('#btn-sales-report');
   const scannerStatus = document.querySelector('#scanner-status');
   if (!readerEl) return;
-  scanWithoutPrinter = false;
+  scanWithoutPrinter = Boolean(allowWithoutPrinter);
 
-  if (supportsBluetoothPrinting()) {
+  if (!scanWithoutPrinter && supportsBluetoothPrinting()) {
     const savedPrinter = getSavedPrinter();
     let printerError = null;
     if (!savedPrinter) {
@@ -880,7 +881,6 @@ async function startScanner() {
       async (decodedText) => {
         if (isProcessingScan) return;
         isProcessingScan = true;
-        showToast('สแกนสำเร็จ!');
         if (scannerStatus) scannerStatus.textContent = 'อ่าน QR สำเร็จ กำลังค้นหาข้อมูล...';
         await stopScanner();
         
@@ -1298,7 +1298,7 @@ async function processPhoneQuery(phone, scannedProductId = null, expiresAt = nul
     removePrintLoadingDialog();
     const message = String(err?.message || '');
     if (message.includes('QR_PRODUCT_NOT_FOUND') || message.includes('ไม่พบข้อมูลสมาชิก') || message.includes('ไม่พบคูปอง') || message.includes('ไม่ได้เลือกสินค้า')) {
-      showAppDialog('ไม่พบ QR Code กรุณาตรวจสอบ QR แล้วลองอีกครั้ง', { title: 'ไม่พบสินค้า' });
+      showAppDialog('ไม่พบข้อมูลในระบบ หรือ QR Code ไม่ถูกต้อง กรุณาตรวจสอบแล้วลองอีกครั้ง', { title: 'ไม่พบ QR Code' });
     } else {
       showAppDialog('เกิดข้อผิดพลาด: ' + message, { title: 'สแกน QR ไม่สำเร็จ' });
     }
