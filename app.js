@@ -474,10 +474,41 @@ function showPrinterStartupDialog(message, { allowSelect = false } = {}) {
   });
 }
 
+async function closeStaffApplication() {
+  releaseStaffUsageOnDisconnect();
+  clearInterval(window.scannerTimer);
+  try {
+    if (html5QrCode?.isScanning) await html5QrCode.stop();
+  } catch (error) {}
+  try {
+    bluetoothDevice?.gatt?.disconnect();
+  } catch (error) {}
+
+  // PWA แบบ standalone บางระบบอนุญาตให้ปิดจากการกดของผู้ใช้โดยตรง
+  window.close();
+
+  // Safari/Chrome บางรุ่นไม่อนุญาตให้เว็บไซต์ปิดหน้าต่างที่ผู้ใช้เปิดเอง
+  window.setTimeout(() => {
+    if (window.closed) return;
+    document.body.innerHTML = `
+      <main style="min-height:100dvh; display:grid; place-items:center; padding:24px; background:#435f52; color:#fff; text-align:center; box-sizing:border-box;">
+        <section>
+          <h1 style="margin:0 0 10px; font-size:1.35rem;">ปิดการใช้งานแล้ว</h1>
+          <p style="margin:0; line-height:1.6;">กรุณาปิดหน้าต่างหรือปัดแอปออก</p>
+        </section>
+      </main>`;
+  }, 150);
+}
+
 async function initializePrinterOnMainScreen() {
   const saved = getSavedPrinter();
   if (!saved) {
-    showPrinterStartupDialog('ยังไม่ได้ตั้งค่าเครื่องพิมพ์ คุณยังใช้งานระบบได้ แต่การยืนยันใช้สิทธิ์จะออกใบเสร็จแบบไม่พิมพ์');
+    showAppDialog('ยังไม่ได้ตั้งค่าเครื่องพิมพ์ ต้องการใช้งานแบบไม่พิมพ์หรือไม่', {
+      title: 'เครื่องพิมพ์',
+      actionLabel: 'ตกลง',
+      cancelLabel: 'ปิด',
+      onCancel: closeStaffApplication
+    });
     return;
   }
 
@@ -565,33 +596,49 @@ function formatCustomerName(name) {
 }
 
 function createReceiptLines(data, billNo) {
-  const now = new Date().toLocaleString('th-TH');
+  const now = new Date().toLocaleString('th-TH', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
   const displayName = formatCustomerName(data.name);
+  const detailText = `รายละเอียด / บ้านเลขที่: ${data.address || '-'}${data.project && data.project !== '-' ? ` หมายเหตุ: ${data.project}` : ''}`;
 
-  const buildBlock = (typeTitle, headerTitle = 'D House x Café Amazon') => [
-    { text: headerTitle, align: 'center', bold: true },
-    { text: `${typeTitle}`, align: 'center', bold: true },
-    { text: `${now}` },
-    { 
-      leftText: `No. ${billNo}`, 
-      rightText: `${data.address || '-'}`
+  const buildBlock = (isMerchantCopy = false) => [
+    {
+      text: 'D House x Café Amazon',
+      align: 'center',
+      bold: true,
+      isReceiptHeader: true,
+      headerDot: isMerchantCopy,
+      cornerText: isMerchantCopy ? '(ร้านค้าเก็บ)' : ''
     },
+    { 
+      leftText: now,
+      rightText: `${billNo}`,
+      fontSize: 17
+    },
+    { text: detailText, fontSize: 20 },
     { 
       leftText: `${displayName}`, 
-      rightText: `${maskPhoneNumber(data.phone)}` 
+      rightText: `${maskPhoneNumber(data.phone)}`,
+      fontSize: 21
     },
-    { text: '1 สิทธิ์ (ใช้สิทธิ์ฟรี)' },
+    { text: '1 สิทธิ์ (ใช้สิทธิ์ฟรี)', fontSize: 21 },
     { text: `${data.productName}`, bold: true },
-    { text: `ใช้ไปแล้ว: ${data.usedCount + 1} สิทธิ์` },
-    { text: `คงเหลือ: ${data.allLimit - (data.usedCount + 1)} สิทธิ์` },
-    ...(data.project && data.project !== '-' ? [{ text: `หมายเหตุ: ${data.project}` }] : []),
-    { text: '' },
+    {
+      leftText: `ใช้ไปแล้ว: ${data.usedCount + 1} สิทธิ์`,
+      rightText: `คงเหลือ: ${data.allLimit - (data.usedCount + 1)} สิทธิ์`,
+      fontSize: 19
+    },
     { text: 'ขอบคุณที่ใช้บริการ', align: 'center' }
   ];
 
   return {
-    original: buildBlock(''),
-    copy: buildBlock('(ร้านค้าเก็บ)', 'D House x Café Amazon ●')
+    original: buildBlock(false),
+    copy: buildBlock(true)
   };
 }
 
@@ -600,7 +647,7 @@ async function printReceiptESC_POS(characteristic, lines) {
 
   const width = PRINT_WIDTH_DOTS, FONT_PX = 24, LINE_H = 34, PAD = 4;
   const thaiFontStack = '"Noto Sans Thai", "Sarabun", "Tahoma", sans-serif';
-  const fontOf = l => `${l.bold ? 'bold ' : ''}${FONT_PX}px ${thaiFontStack}`;
+  const fontOf = l => `${l.bold ? 'bold ' : ''}${l.fontSize || FONT_PX}px ${thaiFontStack}`;
 
   const m = document.createElement('canvas').getContext('2d');
   const rows = [];
@@ -613,7 +660,8 @@ async function printReceiptESC_POS(characteristic, lines) {
         isSplit: true,
         leftText: String(l.leftText ?? ''),
         rightText: String(l.rightText ?? ''),
-        bold: l.bold
+        bold: l.bold,
+        fontSize: l.fontSize
       });
     } else {
       let cur = '';
@@ -639,7 +687,29 @@ async function printReceiptESC_POS(characteristic, lines) {
     ctx.font = fontOf(r);
     const yPos = currentY + i * LINE_H + LINE_H / 2;
 
-    if (r.isSplit) {
+    if (r.isReceiptHeader) {
+      const brandText = r.text;
+      ctx.font = fontOf(r);
+      const brandWidth = ctx.measureText(brandText).width;
+      const dotFontSize = 38;
+      ctx.font = `bold ${dotFontSize}px ${thaiFontStack}`;
+      const dotWidth = r.headerDot ? ctx.measureText('●').width : 0;
+      const gap = r.headerDot ? 5 : 0;
+      const startX = Math.max(PAD, (width - brandWidth - dotWidth - gap) / 2);
+
+      ctx.textAlign = 'left';
+      ctx.font = fontOf(r);
+      ctx.fillText(brandText, startX, yPos + (r.cornerText ? 5 : 0));
+      if (r.headerDot) {
+        ctx.font = `bold ${dotFontSize}px ${thaiFontStack}`;
+        ctx.fillText('●', startX + brandWidth + gap, yPos + 5);
+      }
+      if (r.cornerText) {
+        ctx.font = `bold 14px ${thaiFontStack}`;
+        ctx.textAlign = 'right';
+        ctx.fillText(r.cornerText, width - PAD, yPos - 10);
+      }
+    } else if (r.isSplit) {
       ctx.textAlign = 'left';
       ctx.fillText(r.leftText, PAD, yPos);
 
@@ -713,13 +783,14 @@ async function printTestReceipt() {
       name: 'ทดสอบระบบ',
       phone: '-',
       address: 'TEST',
-      project: '-',
+      project: 'ทดสอบระบบ',
       productName: 'ใบเสร็จทดสอบเครื่องพิมพ์',
       usedCount: 0,
       allLimit: 1
     };
     const receipt = createReceiptLines(testData, `TEST-${Date.now().toString().slice(-6)}`);
     await printReceiptESC_POS(characteristic, receipt.original);
+    await printReceiptESC_POS(characteristic, receipt.copy);
     showToast('พิมพ์ใบเสร็จทดสอบเรียบร้อยแล้ว');
   } catch (error) {
     console.error('Test print failed:', error);
@@ -768,15 +839,17 @@ async function startScanner() {
 
     if (printerError) {
       const continueWithoutPrinter = await showConfirmDialog(
-        /*`ไม่พบหรือไม่สามารถเชื่อมต่อเครื่องพิมพ์ได้ (${printerError.message})\nระบบจะออกใบเสร็จแบบไม่พิมพ์ ต้องการทำรายการต่อหรือไม่?`,*/
-        `(${printerError.message})\nระบบจะออกใบเสร็จแบบไม่พิมพ์ ต้องการทำรายการต่อหรือไม่?`,
+        `ไม่พบหรือไม่สามารถเชื่อมต่อเครื่องพิมพ์ได้ (${printerError.message})\nต้องการใช้งานแบบไม่พิมพ์หรือไม่`,
         {
           title: 'ไม่พบเครื่องพิมพ์',
           confirmLabel: 'ตกลง',
-          cancelLabel: 'ยกเลิก'
+          cancelLabel: 'ปิด'
         }
       );
-      if (!continueWithoutPrinter) return;
+      if (!continueWithoutPrinter) {
+        await closeStaffApplication();
+        return;
+      }
       scanWithoutPrinter = true;
     }
   }
