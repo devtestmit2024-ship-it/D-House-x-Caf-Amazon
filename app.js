@@ -837,7 +837,7 @@ async function startScanner() {
 
     if (printerError) {
       const continueWithoutPrinter = await showConfirmDialog(
-        `ไม่พบหรือไม่สามารถเชื่อมต่อเครื่องพิมพ์ได้ (${printerError.message})\nต้องการใช้งานแบบไม่พิมพ์หรือไม่`,
+        `(${printerError.message})\nหรือต้องการใช้งานแบบไม่พิมพ์หรือไม่?`,
         {
           title: 'ไม่พบเครื่องพิมพ์',
           confirmLabel: 'ตกลง',
