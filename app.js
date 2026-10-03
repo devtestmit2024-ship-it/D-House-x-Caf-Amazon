@@ -604,7 +604,7 @@ function createReceiptLines(data, billNo) {
     minute: '2-digit'
   });
   const displayName = formatCustomerName(data.name);
-  const detailText = `รายละเอียด / บ้านเลขที่: ${data.address || '-'}${data.project && data.project !== '-' ? ` หมายเหตุ: ${data.project}` : ''}`;
+  const detailText = `${data.address || '-'}${data.project && data.project !== '-' ? ` ${data.project}` : ''}`;
 
   const buildBlock = (isMerchantCopy = false) => [
     {
@@ -620,18 +620,16 @@ function createReceiptLines(data, billNo) {
       rightText: `${billNo}`,
       fontSize: 17
     },
-    { text: detailText, fontSize: 20 },
+    { text: detailText },
     { 
       leftText: `${displayName}`, 
-      rightText: `${maskPhoneNumber(data.phone)}`,
-      fontSize: 21
+      rightText: `${maskPhoneNumber(data.phone)}`
     },
-    { text: '1 สิทธิ์ (ใช้สิทธิ์ฟรี)', fontSize: 21 },
+    { text: '1 สิทธิ์ (ใช้สิทธิ์ฟรี)' },
     { text: `${data.productName}`, bold: true },
     {
       leftText: `ใช้ไปแล้ว: ${data.usedCount + 1} สิทธิ์`,
-      rightText: `คงเหลือ: ${data.allLimit - (data.usedCount + 1)} สิทธิ์`,
-      fontSize: 19
+      rightText: `คงเหลือ: ${data.allLimit - (data.usedCount + 1)} สิทธิ์`
     },
     { text: 'ขอบคุณที่ใช้บริการ', align: 'center' }
   ];
@@ -705,9 +703,9 @@ async function printReceiptESC_POS(characteristic, lines) {
         ctx.fillText('●', startX + brandWidth + gap, yPos + 5);
       }
       if (r.cornerText) {
-        ctx.font = `bold 14px ${thaiFontStack}`;
+        ctx.font = `bold ${FONT_PX}px ${thaiFontStack}`;
         ctx.textAlign = 'right';
-        ctx.fillText(r.cornerText, width - PAD, yPos - 10);
+        ctx.fillText(r.cornerText, width - PAD, yPos - 15);
       }
     } else if (r.isSplit) {
       ctx.textAlign = 'left';
