@@ -9,6 +9,7 @@ let isProcessingScan = false;
 let screenWakeLock = null;
 let printerStartupChecked = false;
 let scanWithoutPrinter = false;
+let sessionWithoutPrinter = false;
 
 // กันหน้าจอดับขณะใช้งาน Staff เพื่อไม่ให้ Bluetooth/การสแกนถูกระบบพักการทำงาน
 async function keepStaffScreenAwake() {
@@ -446,6 +447,7 @@ async function configureBluetoothPrinter() {
   try {
     await connectBluetoothPrinter();
     savePrinter(device);
+    sessionWithoutPrinter = false;
     showToast(`ตั้งค่าเครื่องพิมพ์ ${device.name || 'Bluetooth Printer'} เรียบร้อยแล้ว`);
   } catch (error) {
     forgetPrinter();
@@ -457,19 +459,24 @@ function showPrinterStartupDialog(message, { allowSelect = false } = {}) {
   showAppDialog(message, {
     title: 'เครื่องพิมพ์',
     actionLabel: allowSelect ? 'เลือกเครื่องพิมพ์' : 'รับทราบ',
-    cancelLabel: allowSelect ? 'ภายหลัง' : '',
+    cancelLabel: allowSelect ? 'ไม่พิมพ์' : '',
     onAction: allowSelect ? async () => {
       try {
         // requestDevice ต้องเรียกตรงจากการกดของผู้ใช้ ก่อนแสดง Dialog โหลด
         await selectConfiguredPrinter();
         showPrintLoadingDialog('กำลังเชื่อมต่อเครื่องพิมพ์...');
         await connectBluetoothPrinter();
+        sessionWithoutPrinter = false;
         showToast('เชื่อมต่อเครื่องพิมพ์เรียบร้อยแล้ว');
       } catch (error) {
         showAppDialog(`เชื่อมต่อเครื่องพิมพ์ไม่ได้: ${error.message}`, { title: 'เครื่องพิมพ์' });
       } finally {
         removePrintLoadingDialog();
       }
+    } : null,
+    onCancel: allowSelect ? () => {
+      sessionWithoutPrinter = true;
+      scanWithoutPrinter = true;
     } : null
   });
 }
@@ -507,7 +514,10 @@ async function initializePrinterOnMainScreen() {
       title: 'เครื่องพิมพ์',
       actionLabel: 'ตกลง',
       cancelLabel: 'ปิด',
-      onAction: () => startScanner({ allowWithoutPrinter: true }),
+      onAction: () => {
+        sessionWithoutPrinter = true;
+        startScanner({ allowWithoutPrinter: true });
+      },
       onCancel: closeStaffApplication
     });
     return;
@@ -808,7 +818,7 @@ async function startScanner({ allowWithoutPrinter = false } = {}) {
   const salesReportButton = document.querySelector('#btn-sales-report');
   const scannerStatus = document.querySelector('#scanner-status');
   if (!readerEl) return;
-  scanWithoutPrinter = Boolean(allowWithoutPrinter);
+  scanWithoutPrinter = Boolean(allowWithoutPrinter || sessionWithoutPrinter);
 
   if (!scanWithoutPrinter && supportsBluetoothPrinting()) {
     const savedPrinter = getSavedPrinter();
@@ -849,6 +859,7 @@ async function startScanner({ allowWithoutPrinter = false } = {}) {
         await closeStaffApplication();
         return;
       }
+      sessionWithoutPrinter = true;
       scanWithoutPrinter = true;
     }
   }
