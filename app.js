@@ -803,7 +803,7 @@ async function printTestReceipt() {
     showToast('พิมพ์ใบเสร็จทดสอบเรียบร้อยแล้ว');
   } catch (error) {
     console.error('Test print failed:', error);
-    showToast(`พิมพ์ทดสอบไม่ได้: ${error.message}`);
+    //showToast(`พิมพ์ทดสอบไม่ได้: ${error.message}`);
   } finally {
     removePrintLoadingDialog();
   }
